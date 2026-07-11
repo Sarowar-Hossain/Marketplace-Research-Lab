@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "packageManager": "pnpm@11.9.0",
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
@@ -19,6 +20,7 @@
     "vite": "^8.1.4"
   },
   "dependencies": {
+    "better-sqlite3": "^12.11.1",
     "clsx": "^2.1.1",
     "pino": "^10.3.1",
     "react": "^19.2.7",
