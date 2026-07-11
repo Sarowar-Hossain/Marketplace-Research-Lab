@@ -1,0 +1,14 @@
+{
+  "name": "marketplace-research-lab",
+  "version": "0.1.0",
+  "description": "Local-first desktop application that researches Redbubble products for a given keyword and generates an AI-powered HTML research report.",
+  "private": true,
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.9.0",
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "electron": "^43.1.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4"
+  }
+}
