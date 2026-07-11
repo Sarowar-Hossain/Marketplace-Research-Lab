@@ -1,10 +1,15 @@
+Here is the complete rewritten **`005 — Project Structure & Module Boundaries.md`**.
+
+I preserved your original structure and only added the required Electron infrastructure clarification.
+
+````md
 # 005 — Project Structure & Module Boundaries
 
 **Project Name:** Marketplace Research Lab
 
 **Version:** 0.1 MVP
 
-**Document Version:** 1.0
+**Document Version:** 1.1
 
 **Status:** Approved
 
@@ -32,6 +37,8 @@ It does **not** define implementation details.
 
 The project follows these organizational rules.
 
+---
+
 ## Rule 1 — Business Before Technology
 
 The project is organized around business responsibilities rather than frameworks.
@@ -48,7 +55,7 @@ AI
 Reports
 
 Storage
-```
+````
 
 Incorrect:
 
@@ -76,7 +83,7 @@ If a module requires multiple unrelated reasons to change, it should be split.
 
 ## Rule 3 — Clear Ownership
 
-Every file belongs to one module.
+Every file belongs to one module or infrastructure area.
 
 Every module owns one business capability.
 
@@ -105,6 +112,8 @@ Internal implementation must remain private.
 ```text
 Marketplace Research Lab
 │
+├── Application Infrastructure
+│
 ├── Application
 │
 ├── Research Engine
@@ -122,7 +131,7 @@ Marketplace Research Lab
 └── UI
 ```
 
-These are the only top-level business modules for Version 0.1.
+These are the only top-level business modules and infrastructure areas for Version 0.1.
 
 ---
 
@@ -136,18 +145,18 @@ Provides the desktop user interface.
 
 ### Owns
 
-- Application window
-- Keyword input
-- Progress display
-- Report viewer
-- User interactions
+* Application window interface
+* Keyword input
+* Progress display
+* Report viewer
+* User interactions
 
 ### Does NOT Own
 
-- Scraping
-- AI
-- Database
-- Business logic
+* Scraping
+* AI
+* Database
+* Business logic
 
 ---
 
@@ -161,17 +170,17 @@ Acts as the bridge between the UI and the Research Engine.
 
 ### Owns
 
-- User commands
-- Workflow execution
-- Application startup
-- Application shutdown
-- Session coordination
+* User commands
+* Workflow execution
+* Application startup coordination
+* Application shutdown coordination
+* Session coordination
 
 ### Does NOT Own
 
-- Marketplace logic
-- AI analysis
-- Data extraction
+* Marketplace logic
+* AI analysis
+* Data extraction
 
 ---
 
@@ -185,18 +194,18 @@ The Research Engine is the heart of the application.
 
 ### Owns
 
-- Research execution
-- Workflow coordination
-- Pipeline orchestration
-- Progress tracking
-- Failure handling
+* Research execution
+* Workflow coordination
+* Pipeline orchestration
+* Progress tracking
+* Failure handling
 
 ### Does NOT Own
 
-- UI
-- Playwright
-- AI provider implementation
-- SQLite implementation
+* UI
+* Playwright
+* AI provider implementation
+* SQLite implementation
 
 ---
 
@@ -210,18 +219,18 @@ Everything related to Redbubble belongs here.
 
 ### Owns
 
-- Search
-- Product discovery
-- Product extraction
-- HTML extraction
-- Marketplace normalization
+* Search
+* Product discovery
+* Product extraction
+* HTML extraction
+* Marketplace normalization
 
 ### Does NOT Own
 
-- AI
-- Reports
-- Database
-- UI
+* AI
+* Reports
+* Database
+* UI
 
 ---
 
@@ -233,17 +242,17 @@ Generates research intelligence.
 
 ### Owns
 
-- Prompt preparation
-- AI provider communication
-- Response validation
-- Structured analysis generation
+* Prompt preparation
+* AI provider communication
+* Response validation
+* Structured analysis generation
 
 ### Does NOT Own
 
-- Scraping
-- HTML parsing
-- Database queries
-- UI
+* Scraping
+* HTML parsing
+* Database queries
+* UI
 
 ---
 
@@ -255,17 +264,17 @@ Handles all local persistence.
 
 ### Owns
 
-- SQLite
-- Images
-- Cache
-- Reports
-- Local files
+* SQLite
+* Images
+* Cache
+* Reports
+* Local files
 
 ### Does NOT Own
 
-- Business logic
-- AI
-- Marketplace logic
+* Business logic
+* AI
+* Marketplace logic
 
 ---
 
@@ -277,16 +286,16 @@ Produces HTML research reports.
 
 ### Owns
 
-- HTML generation
-- Report templates
-- Report assets
-- Report export
+* HTML generation
+* Report templates
+* Report assets
+* Report export
 
 ### Does NOT Own
 
-- AI
-- Marketplace
-- Database
+* AI
+* Marketplace
+* Database
 
 ---
 
@@ -298,11 +307,11 @@ Contains project-wide shared definitions.
 
 ### Owns
 
-- Types
-- Interfaces
-- Constants
-- Validation schemas
-- Error definitions
+* Types
+* Interfaces
+* Constants
+* Validation schemas
+* Error definitions
 
 ### Does NOT Own
 
@@ -310,11 +319,140 @@ Business logic.
 
 ---
 
-# 5. Physical Directory Structure
+# 5. Application Infrastructure
+
+The application requires runtime infrastructure files that are not part of business modules.
+
+These files support the desktop runtime.
+
+They do not contain business logic.
+
+---
+
+## 5.1 Infrastructure Ownership
+
+The infrastructure layer owns:
+
+* Electron main process
+* Electron preload process
+* Desktop application lifecycle initialization
+
+---
+
+## 5.2 Physical Location
+
+Infrastructure files are stored separately from business modules.
 
 ```text
 marketplace-research-lab/
 
+├── electron/
+│
+│   ├── main.ts
+│   │
+│   └── preload.ts
+```
+
+---
+
+## 5.3 Electron Main Process
+
+### Responsibility
+
+The Electron main process manages the desktop runtime.
+
+### Owns
+
+* Browser window creation
+* Electron application lifecycle
+* Desktop runtime initialization
+
+### Does NOT Own
+
+* Marketplace logic
+* AI processing
+* Database operations
+* Report generation
+* Research workflow
+
+Business operations must continue through the documented module boundaries.
+
+---
+
+## 5.4 Electron Preload Process
+
+### Responsibility
+
+Provides a secure bridge between Electron runtime and the UI layer.
+
+### Owns
+
+* Renderer communication bridge
+
+### Does NOT Own
+
+* Business logic
+* Marketplace communication
+* AI communication
+* Database operations
+
+---
+
+## 5.5 Infrastructure Dependency Rules
+
+Application infrastructure may communicate with:
+
+* UI runtime
+
+Application infrastructure must not directly implement:
+
+* Research workflows
+* Marketplace operations
+* AI processing
+* Storage operations
+* Report generation
+
+---
+
+## 5.6 Infrastructure vs Business Modules
+
+The `electron/` directory is not considered a business module.
+
+The documented business modules remain:
+
+```text
+application
+
+research
+
+marketplace
+
+ai
+
+storage
+
+reports
+
+shared
+
+ui
+```
+
+The infrastructure directory exists only for desktop runtime files.
+
+---
+
+# 6. Physical Directory Structure
+
+```text
+marketplace-research-lab/
+
+├── electron/
+│
+│   ├── main.ts
+│   │
+│   └── preload.ts
+│
 ├── src/
 │
 │   ├── application/
@@ -348,7 +486,7 @@ The root directory remains intentionally simple.
 
 ---
 
-# 6. Module Dependency Graph
+# 7. Module Dependency Graph
 
 Dependencies flow in one direction only.
 
@@ -396,15 +534,17 @@ Neither AI nor Reports communicate directly with Marketplace.
 
 ---
 
-# 7. Communication Rules
+# 8. Communication Rules
 
 The following communication rules are mandatory.
+
+---
 
 ## UI
 
 May communicate only with:
 
-- Application
+* Application
 
 ---
 
@@ -412,7 +552,7 @@ May communicate only with:
 
 May communicate only with:
 
-- Research Engine
+* Research Engine
 
 ---
 
@@ -420,10 +560,10 @@ May communicate only with:
 
 May communicate with:
 
-- Marketplace
-- AI
-- Reports
-- Storage
+* Marketplace
+* AI
+* Reports
+* Storage
 
 ---
 
@@ -431,13 +571,13 @@ May communicate with:
 
 May communicate with:
 
-- Storage (for caching or persistence if orchestrated by the Research Engine)
+* Storage (only when orchestrated by the Research Engine)
 
 Must not communicate with:
 
-- UI
-- AI
-- Reports
+* UI
+* AI
+* Reports
 
 ---
 
@@ -445,12 +585,12 @@ Must not communicate with:
 
 May communicate only with:
 
-- External AI providers
+* External AI providers
 
 Must not communicate with:
 
-- Marketplace
-- UI
+* Marketplace
+* UI
 
 ---
 
@@ -472,19 +612,19 @@ Only persists and retrieves data.
 
 ---
 
-# 8. Module Independence
+# 9. Module Independence
 
 Every module must satisfy the following requirements.
 
-- Can be implemented independently.
-- Can be unit tested independently.
-- Can be mocked by other modules.
-- Has documented public interfaces.
-- Does not expose internal implementation details.
+* Can be implemented independently.
+* Can be unit tested independently.
+* Can be mocked by other modules.
+* Has documented public interfaces.
+* Does not expose internal implementation details.
 
 ---
 
-# 9. Public vs Private Boundaries
+# 10. Public vs Private Boundaries
 
 Each module exposes only its public API.
 
@@ -516,7 +656,7 @@ No module should depend on another module's private implementation.
 
 ---
 
-# 10. Cross-Module Data Flow
+# 11. Cross-Module Data Flow
 
 All business data moves through structured domain entities.
 
@@ -560,26 +700,27 @@ Only validated domain objects are exchanged.
 
 ---
 
-# 11. Forbidden Dependencies
+# 12. Forbidden Dependencies
 
 The following dependencies are prohibited.
 
-- UI → Playwright
-- UI → SQLite
-- UI → AI Provider
-- Reports → Playwright
-- Reports → Redbubble
-- AI → HTML
-- AI → Playwright
-- Marketplace → UI
-- Marketplace → Reports
-- Storage → Business Logic
+* UI → Playwright
+* UI → SQLite
+* UI → AI Provider
+* Reports → Playwright
+* Reports → Redbubble
+* AI → HTML
+* AI → Playwright
+* Marketplace → UI
+* Marketplace → Reports
+* Storage → Business Logic
+* Electron Infrastructure → Business Logic
 
 These rules protect architectural boundaries and reduce coupling.
 
 ---
 
-# 12. Module Lifecycle
+# 13. Module Lifecycle
 
 During a research session, modules are invoked in the following order:
 
@@ -619,33 +760,35 @@ Each module completes its responsibility before passing control back to the Rese
 
 ---
 
-# 13. AI Development Boundaries
+# 14. AI Development Boundaries
 
 Because the project is intended to be built largely with AI coding agents, every module must be self-contained.
 
 Each module specification should include:
 
-- Responsibilities
-- Public interfaces
-- Inputs
-- Outputs
-- Dependencies
-- Error conditions
-- Testing scope
+* Responsibilities
+* Public interfaces
+* Inputs
+* Outputs
+* Dependencies
+* Error conditions
+* Testing scope
 
 This allows individual modules to be implemented with minimal project-wide context.
 
 ---
 
-# 14. Definition of Module Completion
+# 15. Definition of Module Completion
 
 A module is considered complete when:
 
-- It performs only its assigned responsibility.
-- All public interfaces are implemented.
-- Internal implementation details remain private.
-- It satisfies its documented contracts.
-- It passes its own unit tests.
-- It integrates with the Research Engine without requiring modifications to unrelated modules.
+* It performs only its assigned responsibility.
+* All public interfaces are implemented.
+* Internal implementation details remain private.
+* It satisfies its documented contracts.
+* It passes its own unit tests.
+* It integrates with the Research Engine without requiring modifications to unrelated modules.
 
 When every module satisfies these conditions, the overall system remains modular, maintainable, and aligned with the architecture defined in previous documents.
+
+
