@@ -10,8 +10,11 @@ export type ResearchSessionInput = {
   keyword: string;
   marketplace: string;
   status: string;
-  aiProvider?: string | null;
-  aiModel?: string | null;
+  // Required (not optional) because the research_sessions columns are NOT NULL
+  // (Doc 007 §6.1); making omission a compile-time error instead of a runtime
+  // transaction rollback.
+  aiProvider: string;
+  aiModel: string;
   startedAt: string;
   completedAt?: string | null;
   reportId?: string | null;
@@ -32,6 +35,14 @@ export type ProductInput = {
 export type SaveResult = {
   sessionId: string;
   productCount: number;
+};
+
+export type AiAnalysisInput = {
+  sessionId: string;
+  provider: string;
+  model: string;
+  prompt: string;
+  response: string;
 };
 
 // Data Persistence stage (Doc 008 §12, §17): write a research session and its
@@ -72,8 +83,8 @@ export function saveResearchData(
       keyword: session.keyword,
       marketplace: session.marketplace,
       status: session.status,
-      aiProvider: session.aiProvider ?? null,
-      aiModel: session.aiModel ?? null,
+      aiProvider: session.aiProvider,
+      aiModel: session.aiModel,
       startedAt: session.startedAt,
       completedAt: session.completedAt ?? null,
       reportId: session.reportId ?? null,
@@ -120,6 +131,54 @@ export function saveResearchData(
     const detail = error instanceof Error ? error.message : String(error);
     logger.error({ operation: 'persistence', error: detail }, 'Database transaction rolled back');
     logger.error({ operation: 'persistence', error: detail }, 'Database error');
+    throw error;
+  }
+}
+
+// AI Analysis Persistence (Doc 009 §11): store the complete validated analysis
+// linked to its research session, recording provider, model, and timestamp.
+export function saveAiAnalysis(db: Database, analysis: AiAnalysisInput, logger: Logger): void {
+  try {
+    db.prepare(
+      `INSERT INTO ai_analysis (id, session_id, provider, model, prompt, response, generated_at)
+       VALUES (@id, @sessionId, @provider, @model, @prompt, @response, @generatedAt)`,
+    ).run({
+      id: randomUUID(),
+      sessionId: analysis.sessionId,
+      provider: analysis.provider,
+      model: analysis.model,
+      prompt: analysis.prompt,
+      response: analysis.response,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error(
+      { operation: 'persistence', error: error instanceof Error ? error.message : String(error) },
+      'Database error',
+    );
+    throw error;
+  }
+}
+
+// Updates the outcome of an already-persisted session. Needed because research
+// data is saved before AI analysis runs (Doc 009 §13: an AI failure must leave
+// collected data intact), so the final status arrives after the initial insert.
+export function finalizeResearchSession(
+  db: Database,
+  sessionId: string,
+  status: string,
+  completedAt: string | null,
+  logger: Logger,
+): void {
+  try {
+    db.prepare('UPDATE research_sessions SET status = @status, completed_at = @completedAt WHERE id = @sessionId').run(
+      { sessionId, status, completedAt },
+    );
+  } catch (error) {
+    logger.error(
+      { operation: 'persistence', error: error instanceof Error ? error.message : String(error) },
+      'Database error',
+    );
     throw error;
   }
 }

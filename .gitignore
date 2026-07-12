@@ -29,3 +29,6 @@ cache/*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Test build output
+test-dist/

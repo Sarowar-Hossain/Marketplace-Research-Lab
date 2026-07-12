@@ -152,10 +152,13 @@ function buildExtractedProduct(url: string, product: JsonObject | null, data: Pa
   const offer = product ? firstOffer(product['offers']) : null;
   const ldImages = product ? extractImages(product['image']) : [];
   const imageUrls = ldImages.length > 0 ? ldImages : data.ogImage ? [data.ogImage] : [];
+  // The document-title fallback carries the marketplace suffix ("… | Redbubble");
+  // strip it so the fallback yields a usable product title.
+  const docTitle = data.docTitle ? data.docTitle.replace(/\s*\|\s*Redbubble.*$/i, '') : null;
 
   return {
     url,
-    title: (product ? asString(product['name']) : null) ?? data.ogTitle ?? data.docTitle,
+    title: (product ? asString(product['name']) : null) ?? data.ogTitle ?? docTitle,
     description: (product ? asString(product['description']) : null) ?? data.ogDescription,
     artistName: product ? nameOf(product['brand']) ?? nameOf(product['author']) : null,
     productType: product ? asString(product['category']) ?? nameOf(product['category']) : null,
@@ -172,8 +175,10 @@ function buildExtractedProduct(url: string, product: JsonObject | null, data: Pa
 export async function extractProduct(page: Page, productUrl: string, logger: Logger): Promise<ExtractedProduct> {
   logger.info({ operation: 'extraction' }, 'Product extraction started');
   try {
+    // Product metadata (JSON-LD, OpenGraph, meta keywords) ships in the initial
+    // HTML, so domcontentloaded is sufficient — waiting for network idle hangs
+    // on live marketplace pages with persistent connections.
     await page.goto(productUrl, { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle');
 
     const data: PageData = await page.evaluate(() => {
       const metaContent = (selector: string): string | null => {

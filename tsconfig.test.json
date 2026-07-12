@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "noEmit": false,
+    "outDir": "test-dist",
+    "rootDir": "."
+  },
+  "include": ["tests", "src/shared", "src/storage", "src/marketplace", "src/research"]
+}

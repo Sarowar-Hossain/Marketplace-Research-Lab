@@ -6,6 +6,11 @@
   "private": true,
   "license": "UNLICENSED",
   "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "build": "vite build && tsc -p tsconfig.electron.json",
+    "test": "tsc -p tsconfig.test.json && node --test \"test-dist/tests/*.test.js\""
+  },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.1",

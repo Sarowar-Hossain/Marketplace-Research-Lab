@@ -15,3 +15,12 @@ export function createLogger(moduleName: string, logDirectory: string): Logger {
 
   return pino({ level: 'info' }, destination).child({ module: moduleName });
 }
+
+// Flushes buffered log entries to disk. The file destination writes
+// asynchronously, so call this before process shutdown to avoid losing the
+// final entries.
+export function flushLogger(logger: Logger): Promise<void> {
+  return new Promise((resolve, reject) => {
+    logger.flush((error) => (error ? reject(error) : resolve()));
+  });
+}
