@@ -148,6 +148,27 @@ function extractTags(keywords: unknown, metaKeywords: string | null): string[] {
   return [];
 }
 
+// Live Redbubble pages do not publish JSON-LD brand/category (verified
+// 2026-07-12), so the artist falls back to the og:title convention
+// ("… for Sale by <artist>") and the product type to the URL path segment
+// ("/i/<type>/…").
+function artistFromTitle(title: string | null): string | null {
+  if (!title) {
+    return null;
+  }
+  const match = title.match(/\bfor sale by\s+(.+?)\s*$/i);
+  return match ? match[1].trim() : null;
+}
+
+function productTypeFromUrl(url: string): string | null {
+  try {
+    const match = new URL(url).pathname.match(/^\/i\/([^/]+)\//);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
 function buildExtractedProduct(url: string, product: JsonObject | null, data: PageData): ExtractedProduct {
   const offer = product ? firstOffer(product['offers']) : null;
   const ldImages = product ? extractImages(product['image']) : [];
@@ -160,8 +181,13 @@ function buildExtractedProduct(url: string, product: JsonObject | null, data: Pa
     url,
     title: (product ? asString(product['name']) : null) ?? data.ogTitle ?? docTitle,
     description: (product ? asString(product['description']) : null) ?? data.ogDescription,
-    artistName: product ? nameOf(product['brand']) ?? nameOf(product['author']) : null,
-    productType: product ? asString(product['category']) ?? nameOf(product['category']) : null,
+    artistName:
+      (product ? nameOf(product['brand']) ?? nameOf(product['author']) : null) ??
+      artistFromTitle(data.ogTitle) ??
+      artistFromTitle(docTitle),
+    productType:
+      (product ? asString(product['category']) ?? nameOf(product['category']) : null) ??
+      productTypeFromUrl(url),
     price: offer ? toNumber(offer['price']) : null,
     currency: offer ? asString(offer['priceCurrency']) : null,
     imageUrls,

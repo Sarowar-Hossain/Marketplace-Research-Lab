@@ -53,10 +53,11 @@ export type ResearchDependencies = {
   analyzeProducts: (keyword: string, products: CollectedProduct[], logger: Logger) => Promise<AnalysisResult>;
   saveAiAnalysis: (sessionId: string, analysis: AnalysisResult) => unknown;
   finalizeSession: (sessionId: string, status: string, completedAt: string | null) => unknown;
+  generateReport: (sessionId: string) => { reportPath: string };
 };
 
 export type ResearchResult =
-  | { ok: true; session: ResearchSession; productsSaved: number }
+  | { ok: true; session: ResearchSession; productsSaved: number; reportPath: string }
   | { ok: false; reason: 'invalid-keyword'; detail: string };
 
 // Research Engine workflow (Doc 005 §4.3, Doc 008): validate the keyword,
@@ -116,7 +117,6 @@ export async function research(rawKeyword: string, deps: ResearchDependencies): 
       { operation: 'research', sessionId: session.id, productCount: products.length },
       'Research session completed',
     );
-    return { ok: true, session, productsSaved: products.length };
   } catch (error) {
     // AI or finalization failure: the collected marketplace data stays intact;
     // only the session outcome is updated (Doc 009 §13, Doc 012 §8).
@@ -125,6 +125,22 @@ export async function research(rawKeyword: string, deps: ResearchDependencies): 
     logger.error(
       { operation: 'research', sessionId: session.id, error: error instanceof Error ? error.message : String(error) },
       'Research session failed',
+    );
+    throw error;
+  }
+
+  // Report generation runs after completion because a report requires a
+  // completed session (Doc 004 §20). A report failure stops only the report
+  // stage (Doc 010 §11) — the completed session, its data, and analysis all
+  // remain intact, and no report record is created.
+  try {
+    const report = deps.generateReport(session.id);
+    logger.info({ operation: 'research', sessionId: session.id, reportPath: report.reportPath }, 'Report saved');
+    return { ok: true, session, productsSaved: products.length, reportPath: report.reportPath };
+  } catch (error) {
+    logger.error(
+      { operation: 'research', sessionId: session.id, error: error instanceof Error ? error.message : String(error) },
+      'Report generation failed',
     );
     throw error;
   }

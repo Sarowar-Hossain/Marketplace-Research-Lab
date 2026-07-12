@@ -17,10 +17,11 @@ type Calls = {
   analyze: string[];
   saveAnalysis: { sessionId: string; prompt: string; response: string }[];
   finalize: { sessionId: string; status: string; completedAt: string | null }[];
+  report: string[];
 };
 
 function makeDeps(overrides: Partial<ResearchDependencies> = {}): { deps: ResearchDependencies; calls: Calls } {
-  const calls: Calls = { collect: [], save: [], analyze: [], saveAnalysis: [], finalize: [] };
+  const calls: Calls = { collect: [], save: [], analyze: [], saveAnalysis: [], finalize: [], report: [] };
   const deps: ResearchDependencies = {
     marketplace: 'Redbubble', aiProvider: 'openai', aiModel: 'gpt-test', logger,
     collectProducts: async (kw, _log, onStage) => {
@@ -32,16 +33,18 @@ function makeDeps(overrides: Partial<ResearchDependencies> = {}): { deps: Resear
     analyzeProducts: async (kw) => { calls.analyze.push(kw); return { prompt: 'P', response: 'R' }; },
     saveAiAnalysis: (sessionId, analysis) => { calls.saveAnalysis.push({ sessionId, ...analysis }); return {}; },
     finalizeSession: (sessionId, status, completedAt) => { calls.finalize.push({ sessionId, status, completedAt }); return {}; },
+    generateReport: (sessionId) => { calls.report.push(sessionId); return { reportPath: '/reports/r.html' }; },
     ...overrides,
   };
   return { deps, calls };
 }
 
-test('successful workflow: collect → persist(analyzing) → analyze → save analysis → finalize completed', async () => {
+test('successful workflow: collect → persist(analyzing) → analyze → save analysis → finalize completed → report', async () => {
   const { deps, calls } = makeDeps();
   const result = await research('  dog   mom ', deps);
   assert.ok(result.ok);
   assert.equal(result.ok && result.productsSaved, 2);
+  assert.equal(result.ok && result.reportPath, '/reports/r.html');
   assert.deepEqual(calls.collect, ['dog mom']);
   // Research data is persisted BEFORE analysis, carrying 'analyzing'.
   assert.equal(calls.save.length, 1);
@@ -52,6 +55,7 @@ test('successful workflow: collect → persist(analyzing) → analyze → save a
   assert.equal(calls.finalize.length, 1);
   assert.equal(calls.finalize[0].status, 'completed');
   assert.ok(calls.finalize[0].completedAt);
+  assert.equal(calls.report.length, 1);
 });
 
 test('invalid keyword: nothing runs', async () => {
@@ -69,13 +73,23 @@ test('collection failure: no persistence, no analysis, no finalize; error propag
   assert.equal(calls.finalize.length, 0);
 });
 
-test('AI failure preserves persisted data and finalizes the session as failed', async () => {
+test('AI failure preserves persisted data, finalizes failed, and skips the report', async () => {
   const { deps, calls } = makeDeps({ analyzeProducts: async () => { throw new Error('provider down'); } });
   await assert.rejects(() => research('dog mom', deps), /provider down/);
   // Data was persisted before the AI step and is never rolled back.
   assert.equal(calls.save.length, 1);
   assert.equal(calls.saveAnalysis.length, 0);
   assert.deepEqual(calls.finalize.map((f) => f.status), ['failed']);
+  assert.equal(calls.report.length, 0);
+});
+
+test('report failure propagates but the session stays completed (not re-finalized)', async () => {
+  const { deps, calls } = makeDeps({ generateReport: () => { throw new Error('disk full'); } });
+  await assert.rejects(() => research('dog mom', deps), /disk full/);
+  // The session was finalized 'completed' before the report stage and the
+  // failure must not flip it to failed (Doc 010 §11: stop the report only).
+  assert.deepEqual(calls.finalize.map((f) => f.status), ['completed']);
+  assert.equal(calls.saveAnalysis.length, 1);
 });
 
 test('persistence failure of research data: no analysis, no finalize', async () => {
@@ -85,7 +99,7 @@ test('persistence failure of research data: no analysis, no finalize', async () 
   assert.equal(calls.finalize.length, 0);
 });
 
-test('interaction order is collect, save, analyze, saveAnalysis, finalize', async () => {
+test('interaction order is collect, save, analyze, saveAnalysis, finalize, report', async () => {
   const order: string[] = [];
   const { deps } = makeDeps({
     collectProducts: async () => { order.push('collect'); return FAKE_PRODUCTS; },
@@ -93,7 +107,8 @@ test('interaction order is collect, save, analyze, saveAnalysis, finalize', asyn
     analyzeProducts: async () => { order.push('analyze'); return { prompt: 'P', response: 'R' }; },
     saveAiAnalysis: () => { order.push('saveAnalysis'); return {}; },
     finalizeSession: (_id, status) => { order.push(`finalize:${status}`); return {}; },
+    generateReport: () => { order.push('report'); return { reportPath: '/r.html' }; },
   });
   await research('dog mom', deps);
-  assert.deepEqual(order, ['collect', 'save:analyzing', 'analyze', 'saveAnalysis', 'finalize:completed']);
+  assert.deepEqual(order, ['collect', 'save:analyzing', 'analyze', 'saveAnalysis', 'finalize:completed', 'report']);
 });

@@ -160,6 +160,53 @@ export function saveAiAnalysis(db: Database, analysis: AiAnalysisInput, logger: 
   }
 }
 
+export type ReportMetadataInput = {
+  sessionId: string;
+  reportPath: string;
+};
+
+export type ReportMetadataResult = {
+  reportId: string;
+  reportPath: string;
+};
+
+// Report Metadata Persistence (Doc 010 §10, §13): records the generated report
+// and links it to its session in one transaction, so the reports row and the
+// session's report_id can never diverge.
+export function saveReportMetadata(
+  db: Database,
+  input: ReportMetadataInput,
+  logger: Logger,
+): ReportMetadataResult {
+  const reportId = randomUUID();
+  const write = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO reports (id, session_id, report_path, generated_at)
+       VALUES (@id, @sessionId, @reportPath, @generatedAt)`,
+    ).run({
+      id: reportId,
+      sessionId: input.sessionId,
+      reportPath: input.reportPath,
+      generatedAt: new Date().toISOString(),
+    });
+    db.prepare('UPDATE research_sessions SET report_id = @reportId WHERE id = @sessionId').run({
+      reportId,
+      sessionId: input.sessionId,
+    });
+  });
+
+  try {
+    write();
+    return { reportId, reportPath: input.reportPath };
+  } catch (error) {
+    logger.error(
+      { operation: 'persistence', error: error instanceof Error ? error.message : String(error) },
+      'Database error',
+    );
+    throw error;
+  }
+}
+
 // Updates the outcome of an already-persisted session. Needed because research
 // data is saved before AI analysis runs (Doc 009 §13: an AI failure must leave
 // collected data intact), so the final status arrives after the initial insert.

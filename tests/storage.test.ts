@@ -8,8 +8,10 @@ import {
   saveResearchData,
   saveAiAnalysis,
   finalizeResearchSession,
+  saveReportMetadata,
   type ProductInput,
 } from '../src/storage/persistence';
+import { loadResearchData } from '../src/storage/research-data';
 import { testLogger, tempDir } from './util';
 
 const logger = testLogger('storage');
@@ -95,6 +97,46 @@ test('finalizeResearchSession updates status and completedAt of the stored row',
   };
   assert.equal(row.status, 'completed');
   assert.equal(row.completed_at, '2026-07-12T11:00:00Z');
+  closeDatabase(db);
+});
+
+test('loadResearchData returns the full session tree in collection order', () => {
+  const db = initializeDatabase(join(dir, 'load.db'), logger);
+  saveResearchData(db, session, products, logger);
+  saveAiAnalysis(db, { sessionId: 'sess-1', provider: 'openai', model: 'm', prompt: 'P', response: 'R' }, logger);
+
+  const data = loadResearchData(db, 'sess-1');
+  assert.ok(data.session);
+  assert.equal(data.session?.keyword, 'dog mom');
+  assert.equal(data.session?.aiProvider, 'prov');
+  assert.equal(data.products.length, 2);
+  assert.equal(data.products[0].title, 'Cool Mug', 'collection order preserved');
+  assert.equal(data.products[0].images.length, 2);
+  assert.deepEqual(data.products[0].tags, ['a', 'b']);
+  assert.equal(data.products[0].statistics, null);
+  assert.equal(data.analysis?.response, 'R');
+
+  const missing = loadResearchData(db, 'nope');
+  assert.equal(missing.session, null);
+  assert.equal(missing.products.length, 0);
+  assert.equal(missing.analysis, null);
+  closeDatabase(db);
+});
+
+test('saveReportMetadata records the report and links the session atomically', () => {
+  const db = initializeDatabase(join(dir, 'report.db'), logger);
+  saveResearchData(db, session, products, logger);
+  const result = saveReportMetadata(db, { sessionId: 'sess-1', reportPath: '/reports/r.html' }, logger);
+  const report = db.prepare('SELECT * FROM reports').get() as Record<string, unknown>;
+  assert.equal(report.id, result.reportId);
+  assert.equal(report.session_id, 'sess-1');
+  assert.equal(report.report_path, '/reports/r.html');
+  assert.ok(report.generated_at);
+  const sess = db.prepare("SELECT report_id FROM research_sessions WHERE id='sess-1'").get() as { report_id: string };
+  assert.equal(sess.report_id, result.reportId);
+  // Orphan session id is rejected by the FK, and the transaction leaves nothing.
+  assert.throws(() => saveReportMetadata(db, { sessionId: 'nope', reportPath: '/x.html' }, logger));
+  assert.equal((db.prepare('SELECT COUNT(*) c FROM reports').get() as { c: number }).c, 1);
   closeDatabase(db);
 });
 

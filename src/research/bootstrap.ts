@@ -2,10 +2,20 @@ import type { Logger } from 'pino';
 import { collectProducts } from '../marketplace/collect';
 import { initializeDatabase } from '../storage/initialize';
 import { closeDatabase } from '../storage/database';
-import { saveResearchData, saveAiAnalysis, finalizeResearchSession } from '../storage/persistence';
+import {
+  saveResearchData,
+  saveAiAnalysis,
+  finalizeResearchSession,
+  saveReportMetadata,
+} from '../storage/persistence';
+import { loadResearchData } from '../storage/research-data';
 import { createAiProvider } from '../ai/provider';
 import { analyzeProducts } from '../ai/analyze';
+import { generateReportHtml } from '../reports/generate';
+import { saveReportFile } from '../reports/save';
 import { research, type ResearchResult } from './engine';
+
+const PROJECT_NAME = 'Marketplace Research Lab';
 
 // Composition layer (Doc 005 §7–§8: Research Engine → Marketplace / AI /
 // Storage). Binds the real Marketplace collector, AI provider, and Storage
@@ -15,6 +25,7 @@ import { research, type ResearchResult } from './engine';
 // created and closed.
 export type ResearchRunnerOptions = {
   databaseFilePath: string;
+  reportsDirectory: string;
   marketplace: string;
   aiProvider: string;
   aiModel: string;
@@ -70,6 +81,24 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
           ),
         finalizeSession: (sessionId, status, completedAt) =>
           finalizeResearchSession(db, sessionId, status, completedAt, options.logger),
+        generateReport: (sessionId) => {
+          // Report pipeline (Doc 010 §5): load stored data, generate HTML,
+          // save the file, then record metadata — in that order, so a file
+          // write failure never leaves a dangling database record (§13).
+          const data = loadResearchData(db, sessionId);
+          if (!data.session || !data.analysis) {
+            throw new Error('Report generation requires a stored session and AI analysis');
+          }
+          const html = generateReportHtml({
+            projectName: PROJECT_NAME,
+            session: data.session,
+            products: data.products,
+            analysis: data.analysis,
+            generatedAt: new Date().toISOString(),
+          });
+          const reportPath = saveReportFile(html, options.reportsDirectory, `research-${sessionId}.html`);
+          return saveReportMetadata(db, { sessionId, reportPath }, options.logger);
+        },
       });
     },
     close: () => closeDatabase(db),

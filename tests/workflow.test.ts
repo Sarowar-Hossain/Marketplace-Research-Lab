@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { rmSync } from 'node:fs';
+import { rmSync, existsSync, readFileSync } from 'node:fs';
 import { chromium, type Browser, type LaunchOptions, type Route } from 'playwright';
 import Database from 'better-sqlite3';
 import { createResearchRunner } from '../src/research/bootstrap';
@@ -27,7 +27,7 @@ const PRODUCT_PAGES: Record<string, string> = {
     <script type="application/ld+json">{"@type":"Product","name":" Cool Mug ","keywords":["a","a","b"],
     "image":["https://img/1"],"offers":{"price":"12.50","priceCurrency":"USD"}}</script></head><body></body></html>`,
   'https://www.redbubble.com/i/sticker/Fun/222.def': `<!doctype html><html><head>
-    <meta property="og:title" content="Fun Sticker"></head><body></body></html>`,
+    <meta property="og:title" content="&quot;Fun Sticker&quot; Sticker for Sale by TestArtist"></head><body></body></html>`,
 };
 
 let browserMode: 'ok' | 'fail' = 'ok';
@@ -78,11 +78,11 @@ after(() => {
 
 const runnerFor = (dbPath: string) =>
   createResearchRunner({
-    databaseFilePath: dbPath, marketplace: 'Redbubble',
+    databaseFilePath: dbPath, reportsDirectory: dir, marketplace: 'Redbubble',
     aiProvider: 'openai', aiModel: 'test-model', aiApiKey: 'test-key', logger,
   });
 
-test('complete workflow persists products, AI analysis, and a completed session', async () => {
+test('complete workflow persists products, AI analysis, a completed session, and an HTML report', async () => {
   const dbPath = join(dir, 'e2e.db');
   const runner = runnerFor(dbPath);
   const result = await runner.research('  dog   mom ');
@@ -100,12 +100,30 @@ test('complete workflow persists products, AI analysis, and a completed session'
   const count = (sql: string) => (db.prepare(sql).get() as { c: number }).c;
   assert.equal(count('SELECT COUNT(*) c FROM products'), 2);
   assert.ok(db.prepare("SELECT 1 FROM products WHERE title='Cool Mug'").get());
+  // Extraction fallbacks verified end-to-end: artist from og:title, type from URL.
+  const sticker = db.prepare("SELECT artist_name, product_type FROM products WHERE product_url LIKE '%sticker%'").get() as {
+    artist_name: string | null; product_type: string | null;
+  };
+  assert.equal(sticker.artist_name, 'TestArtist');
+  assert.equal(sticker.product_type, 'sticker');
   const analysis = db.prepare('SELECT * FROM ai_analysis').all() as Record<string, unknown>[];
   assert.equal(analysis.length, 1);
   assert.equal(analysis[0].session_id, sess[0].id);
   assert.equal(analysis[0].provider, 'openai');
   assert.equal(analysis[0].response, 'Structured research analysis text.');
   assert.match(String(analysis[0].prompt), /dog mom/);
+
+  // Report file exists, is offline-safe, and its metadata is linked (Doc 010 §10, §13).
+  assert.ok(result.ok && existsSync(result.reportPath));
+  const html = readFileSync(result.ok ? result.reportPath : '', 'utf8');
+  assert.match(html, /dog mom/);
+  assert.match(html, /Cool Mug/);
+  assert.match(html, /Structured research analysis text\./);
+  assert.ok(!/img src="http/.test(html), 'report must not reference remote images');
+  const report = db.prepare('SELECT * FROM reports').all() as Record<string, unknown>[];
+  assert.equal(report.length, 1);
+  assert.equal(report[0].session_id, sess[0].id);
+  assert.equal(sess[0].report_id, report[0].id);
   assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
   db.close();
 });
@@ -125,6 +143,7 @@ test('AI failure preserves collected data and marks the session failed', async (
   const count = (sql: string) => (db.prepare(sql).get() as { c: number }).c;
   assert.equal(count('SELECT COUNT(*) c FROM products'), 2, 'collected products must survive AI failure');
   assert.equal(count('SELECT COUNT(*) c FROM ai_analysis'), 0);
+  assert.equal(count('SELECT COUNT(*) c FROM reports'), 0, 'no report record without analysis');
   db.close();
 });
 
