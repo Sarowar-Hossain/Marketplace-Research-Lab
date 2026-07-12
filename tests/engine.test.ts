@@ -116,6 +116,24 @@ test('interaction order is collect, save, analyze, saveAnalysis, finalize, image
   assert.deepEqual(order, ['collect', 'save:analyzing', 'analyze', 'saveAnalysis', 'finalize:completed', 'images', 'report']);
 });
 
+test('trend velocity flows to analysis and report; scout failure is tolerated', async () => {
+  const velocity = { recentSampleSize: 10, freshTopSellerCount: 2, freshTopSellerPct: 100, incumbentUploadPct: 50, newEntrantArtists: 3 };
+  const seen: unknown[] = [];
+  const { deps } = makeDeps({
+    assessTrendVelocity: async () => velocity,
+    analyzeProducts: async (_kw, _p, _log, v) => { seen.push(v); return { prompt: 'P', response: 'R' }; },
+    generateReport: (_id, v) => { seen.push(v); return { reportPath: '/r.html' }; },
+  });
+  const result = await research('dog mom', deps);
+  assert.ok(result.ok);
+  assert.deepEqual(seen, [velocity, velocity]);
+
+  // Scout failure: workflow continues with null velocity.
+  const { deps: failing } = makeDeps({ assessTrendVelocity: async () => { throw new Error('scout blocked'); } });
+  const result2 = await research('dog mom', failing);
+  assert.ok(result2.ok);
+});
+
 test('image download failure is tolerated: research still succeeds with a report', async () => {
   const { deps, calls } = makeDeps({ downloadImages: async () => { throw new Error('cdn down'); } });
   const result = await research('dog mom', deps);

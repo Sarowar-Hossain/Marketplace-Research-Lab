@@ -24,6 +24,7 @@ const STAGE_LABELS: Record<string, string> = {
   extracting: 'Extracting product data…',
   normalizing: 'Normalizing products…',
   comparing: 'Scouting next keyword…',
+  'assessing-trend': 'Checking trend velocity…',
   analyzing: 'Running AI analysis…',
   'downloading-images': 'Downloading product images…',
   'generating-report': 'Generating HTML report…',

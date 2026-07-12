@@ -36,7 +36,7 @@ const PRODUCT_PAGES: Record<string, string> = {
 let browserMode: 'ok' | 'fail' = 'ok';
 let aiMode: 'ok' | 'fail' = 'ok';
 let browserLaunches = 0;
-let lastSearchUrl: string | null = null;
+const searchUrls: string[] = [];
 const realLaunch = chromium.launch.bind(chromium);
 const realFetch = globalThis.fetch;
 const dir = tempDir('mrl-e2e-');
@@ -53,7 +53,7 @@ before(() => {
         if (browserMode === 'fail') return route.abort();
         const url = route.request().url().split('?')[0].split('#')[0];
         if (url.startsWith('https://www.redbubble.com/shop')) {
-          lastSearchUrl = route.request().url();
+          searchUrls.push(route.request().url());
           return route.fulfill({ status: 200, contentType: 'text/html', body: SEARCH_PAGE });
         }
         const html = PRODUCT_PAGES[url];
@@ -106,7 +106,8 @@ test('complete workflow persists products, AI analysis, a completed session, and
   assert.equal(result.ok && result.productsSaved, 2);
   // Progress channel reports every workflow phase in order (UI consumes this).
   assert.deepEqual(progressLog, [
-    'searching', 'discovering', 'extracting', 'normalizing', 'analyzing', 'downloading-images', 'generating-report',
+    'searching', 'discovering', 'extracting', 'normalizing', 'assessing-trend', 'analyzing',
+    'downloading-images', 'generating-report',
   ]);
 
   const db = new Database(dbPath, { readonly: true });
@@ -119,11 +120,16 @@ test('complete workflow persists products, AI analysis, a completed session, and
   assert.equal(count('SELECT COUNT(*) c FROM products'), 2);
   assert.ok(db.prepare("SELECT 1 FROM products WHERE title='Cool Mug'").get());
   // Search URL contract (RESEARCH-IMPROVEMENTS-PLAN §2.1): category + sort.
-  assert.ok(lastSearchUrl);
-  const searchUrl = new URL(lastSearchUrl as string);
+  // Two searches per run: the main top-selling search + the recent-sort
+  // trend-velocity scout.
+  assert.equal(searchUrls.length, 2);
+  const searchUrl = new URL(searchUrls[0]);
   assert.equal(searchUrl.searchParams.get('iaCode'), 'u-tees');
   assert.equal(searchUrl.searchParams.get('sortOrder'), 'top selling');
   assert.equal(searchUrl.searchParams.get('includeMatureContent'), 'false');
+  const scoutUrl = new URL(searchUrls[1]);
+  assert.equal(scoutUrl.searchParams.get('sortOrder'), 'recent');
+  assert.equal(scoutUrl.searchParams.get('iaCode'), 'u-tees');
   // Session records the search scope.
   assert.equal(sess[0].product_type, 'T-Shirts');
   assert.equal(sess[0].sort_order, 'top selling');
@@ -161,6 +167,10 @@ test('complete workflow persists products, AI analysis, a completed session, and
   assert.match(html, /Cool Mug/);
   assert.match(html, /Structured research analysis text\./);
   assert.ok(!/img src="http/.test(html), 'report must not reference remote images');
+  // Trend velocity: fixture serves identical pages for both sorts, so all top
+  // sellers appear "recent" (100% fresh) — the section must render the numbers.
+  assert.match(html, /Trend Velocity/);
+  assert.match(html, /100% of top sellers are recent uploads/);
   // Research-improvements report additions: metrics panel, rank badges, scope.
   assert.match(html, /Market Metrics/);
   assert.match(html, /#1/);

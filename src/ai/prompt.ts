@@ -14,11 +14,22 @@ export type AnalysisProduct = {
   artistDesignCount?: number | null;
 };
 
+// Trend velocity signals (structural mirror of the research module's
+// TrendVelocity — the AI module imports nothing from other modules).
+export type TrendVelocitySignals = {
+  recentSampleSize: number;
+  freshTopSellerCount: number;
+  freshTopSellerPct: number;
+  incumbentUploadPct: number;
+  newEntrantArtists: number;
+};
+
 // Research context for the analysis: what was searched and how it was sorted.
 // When sorted by "top selling", product rank is the demand order.
 export type AnalysisContext = {
   productType: string;
   sortOrder: string;
+  trendVelocity?: TrendVelocitySignals;
 };
 
 // Long descriptions add cost without analytical value; truncation keeps the
@@ -88,6 +99,19 @@ export function buildAnalysisPrompt(
       ? 'Results were sorted by TOP SELLING, so each product\'s "rank" is its demand position — rank 1 is the best-selling result for this search. Weight your analysis toward lower ranks (the proven winners).'
       : `Results were sorted by "${context.sortOrder}"; rank reflects display order, not sales.`;
 
+  const velocity = context.trendVelocity;
+  const velocityBlock = velocity
+    ? [
+        '',
+        'Trend velocity (top-selling set compared against a recent-uploads sample):',
+        `- Recent uploads sampled: ${velocity.recentSampleSize}`,
+        `- Top sellers that are recent uploads: ${velocity.freshTopSellerCount} (${velocity.freshTopSellerPct}% of top sellers) — high means the niche is rising fast`,
+        `- Recent uploads by incumbent top-selling artists: ${velocity.incumbentUploadPct}% — high means incumbents are defending the niche`,
+        `- New artists entering recently: ${velocity.newEntrantArtists}`,
+        'Factor this into the Saturation Verdict and note the trend direction.',
+      ]
+    : [];
+
   return [
     'You are a senior print-on-demand market analyst advising a Redbubble seller.',
     `The seller's target product category is: ${context.productType}.`,
@@ -96,6 +120,7 @@ export function buildAnalysisPrompt(
     '',
     'Market aggregates (computed from the data):',
     marketSummary(products),
+    ...velocityBlock,
     '',
     'Produce a structured research analysis with exactly these sections:',
     '1. Niche Summary',

@@ -170,7 +170,7 @@ function artistFromTitle(title: string | null): string | null {
   return match ? match[1].trim() : null;
 }
 
-function artistFromUrl(url: string): string | null {
+export function artistFromUrl(url: string): string | null {
   try {
     const match = new URL(url).pathname.match(/-by-([^/]+)\//);
     return match ? decodeURIComponent(match[1]) : null;

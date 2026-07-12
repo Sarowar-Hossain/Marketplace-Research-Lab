@@ -14,8 +14,10 @@ import { createAiProvider } from '../ai/provider';
 import { analyzeProducts } from '../ai/analyze';
 import { generateReportHtml } from '../reports/generate';
 import { saveReportFile } from '../reports/save';
+import { scoutProducts } from '../marketplace/scout';
 import { research, type ResearchResult } from './engine';
 import { runComparison, type ComparisonResult } from './comparison';
+import { computeTrendVelocity } from './velocity';
 
 const PROJECT_NAME = 'Marketplace Research Lab';
 
@@ -30,6 +32,7 @@ const PROJECT_NAME = 'Marketplace Research Lab';
 export type ProgressStage =
   | CollectionStage
   | 'comparing'
+  | 'assessing-trend'
   | 'analyzing'
   | 'downloading-images'
   | 'generating-report';
@@ -92,11 +95,18 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
           }),
         saveResearchData: (session, products) =>
           saveResearchData(db, session, products, options.logger),
-        analyzeProducts: (keyword, products, logger) => {
+        assessTrendVelocity: async (keyword, products) => {
+          options.onProgress?.('assessing-trend');
+          // URL-only scout of the recent sort: one page load, no product visits.
+          const recentSample = await scoutProducts(keyword, options.logger, { iaCode, sortOrder: 'recent' });
+          return computeTrendVelocity(products, recentSample);
+        },
+        analyzeProducts: (keyword, products, logger, velocity) => {
           options.onProgress?.('analyzing');
           return analyzeProducts(keyword, products, aiProvider, logger, {
             productType: productTypeLabel,
             sortOrder,
+            trendVelocity: velocity ?? undefined,
           });
         },
         saveAiAnalysis: (sessionId, analysis) =>
@@ -117,7 +127,7 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
           options.onProgress?.('downloading-images');
           return downloadProductImages(db, sessionId, options.imagesDirectory, options.logger);
         },
-        generateReport: (sessionId) => {
+        generateReport: (sessionId, velocity) => {
           options.onProgress?.('generating-report');
           // Report pipeline (Doc 010 §5): load stored data, generate HTML,
           // save the file, then record metadata — in that order, so a file
@@ -132,6 +142,7 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
             products: data.products,
             analysis: data.analysis,
             generatedAt: new Date().toISOString(),
+            trendVelocity: velocity ?? null,
           });
           const reportPath = saveReportFile(html, options.reportsDirectory, `research-${sessionId}.html`);
           return saveReportMetadata(db, { sessionId, reportPath }, options.logger);

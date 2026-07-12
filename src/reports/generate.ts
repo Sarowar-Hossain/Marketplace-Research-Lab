@@ -9,6 +9,15 @@ export type ReportData = {
   products: StoredProduct[];
   analysis: StoredAnalysis;
   generatedAt: string;
+  // Ephemeral run-time measurement (not persisted); absent on regenerated
+  // reports. Structural mirror of the research module's TrendVelocity.
+  trendVelocity?: {
+    recentSampleSize: number;
+    freshTopSellerCount: number;
+    freshTopSellerPct: number;
+    incumbentUploadPct: number;
+    newEntrantArtists: number;
+  } | null;
 };
 
 export function escapeHtml(value: string): string {
@@ -158,6 +167,19 @@ export function generateReportHtml(data: ReportData): string {
   </dl>
 </section>
 ${metricsSection(data.products)}
+${
+  data.trendVelocity
+    ? `<section>
+  <h2>Trend Velocity</h2>
+  <dl>
+    <dt>Recent Uploads Sampled</dt><dd>${data.trendVelocity.recentSampleSize}</dd>
+    <dt>Fresh Top Sellers</dt><dd>${data.trendVelocity.freshTopSellerCount} (${data.trendVelocity.freshTopSellerPct}% of top sellers are recent uploads)</dd>
+    <dt>Incumbent Upload Activity</dt><dd>${data.trendVelocity.incumbentUploadPct}% of recent uploads are by top-selling artists</dd>
+    <dt>New Artists Entering</dt><dd>${data.trendVelocity.newEntrantArtists}</dd>
+  </dl>
+</section>`
+    : ''
+}
 <section>
   <h2>Products (${data.products.length})</h2>
   ${data.products.map(productCard).join('\n')}

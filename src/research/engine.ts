@@ -7,6 +7,7 @@ import {
   failResearchSession,
   type ResearchSession,
 } from './session';
+import type { TrendVelocity } from './velocity';
 
 // Structural shape of a collected product. Matches the Marketplace
 // NormalizedProduct and the Storage ProductInput, so the engine never imports
@@ -62,11 +63,19 @@ export type ResearchDependencies = {
     onStage?: (stage: CollectionStage) => void,
   ) => Promise<CollectedProduct[]>;
   saveResearchData: (session: ResearchSession, products: CollectedProduct[]) => unknown;
-  analyzeProducts: (keyword: string, products: CollectedProduct[], logger: Logger) => Promise<AnalysisResult>;
+  // Optional trend-velocity scout (recent-sort sample vs the collected top
+  // sellers). Absent or failing velocity never affects the workflow.
+  assessTrendVelocity?: (keyword: string, products: CollectedProduct[]) => Promise<TrendVelocity | null>;
+  analyzeProducts: (
+    keyword: string,
+    products: CollectedProduct[],
+    logger: Logger,
+    velocity?: TrendVelocity | null,
+  ) => Promise<AnalysisResult>;
   saveAiAnalysis: (sessionId: string, analysis: AnalysisResult) => unknown;
   finalizeSession: (sessionId: string, status: string, completedAt: string | null) => unknown;
   downloadImages: (sessionId: string) => Promise<number>;
-  generateReport: (sessionId: string) => { reportPath: string };
+  generateReport: (sessionId: string, velocity?: TrendVelocity | null) => { reportPath: string };
 };
 
 export type ResearchResult =
@@ -127,8 +136,22 @@ export async function research(rawKeyword: string, deps: ResearchDependencies): 
     throw error;
   }
 
+  // Trend velocity is a best-effort measurement taken after the data is safely
+  // persisted; a scout failure only means the analysis runs without it.
+  let velocity: TrendVelocity | null = null;
+  if (deps.assessTrendVelocity) {
+    try {
+      velocity = await deps.assessTrendVelocity(validation.keyword, products);
+    } catch (error) {
+      logger.warn(
+        { operation: 'research', sessionId: session.id, error: error instanceof Error ? error.message : String(error) },
+        'Trend velocity assessment failed',
+      );
+    }
+  }
+
   try {
-    const analysis = await deps.analyzeProducts(validation.keyword, products, logger);
+    const analysis = await deps.analyzeProducts(validation.keyword, products, logger, velocity);
     deps.saveAiAnalysis(session.id, analysis);
 
     session = completeResearchSession(session);
@@ -166,7 +189,7 @@ export async function research(rawKeyword: string, deps: ResearchDependencies): 
   // stage (Doc 010 §11) — the completed session, its data, and analysis all
   // remain intact, and no report record is created.
   try {
-    const report = deps.generateReport(session.id);
+    const report = deps.generateReport(session.id, velocity);
     logger.info({ operation: 'research', sessionId: session.id, reportPath: report.reportPath }, 'Report saved');
     return { ok: true, session, productsSaved: products.length, reportPath: report.reportPath };
   } catch (error) {
