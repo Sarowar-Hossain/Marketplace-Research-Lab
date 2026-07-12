@@ -22,7 +22,7 @@ export function TagChips({ tags, max = 40 }: { tags: TagCount[]; max?: number })
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-neutral-500">{tags.length} unique tags</p>
+        <p className="text-sm text-muted">{tags.length} unique tags</p>
         <Button variant="outline" size="sm" onClick={copyAll}>
           {copied ? 'Copied!' : 'Copy all'}
         </Button>
@@ -31,10 +31,10 @@ export function TagChips({ tags, max = 40 }: { tags: TagCount[]; max?: number })
         {tags.slice(0, max).map(({ tag, count }) => (
           <span
             key={tag}
-            className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-sm text-neutral-700"
+            className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-panel px-3 py-1 text-sm text-muted"
           >
             {tag}
-            <span className="text-xs font-medium text-neutral-400">{count}</span>
+            <span className="text-xs font-medium text-faint">{count}</span>
           </span>
         ))}
       </div>

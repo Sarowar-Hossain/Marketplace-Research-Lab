@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { createLogger, flushLogger } from '../src/shared/logger';
 import { loadSettings, saveSettings } from '../src/application/settings';
 import {
+  listResearchSessions,
   loadResearchResult,
   runResearch,
   runKeywordComparison,
@@ -104,6 +105,8 @@ ipcMain.handle('report:open', async (_event, reportPath: string) => {
 ipcMain.handle('research:getData', (_event, sessionId: string) =>
   loadResearchResult(rootDirectory, sessionId, logger),
 );
+
+ipcMain.handle('research:listSessions', () => listResearchSessions(rootDirectory, logger));
 
 app.whenReady().then(() => {
   logger.info({ operation: 'application' }, 'Application started');

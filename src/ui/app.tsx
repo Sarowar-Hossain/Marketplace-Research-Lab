@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { ResearchData, SortOrder, UiSettings } from './api';
+import { AppShell } from './components/app-shell';
+import { HistoryView } from './components/history-view';
 import { ResultsView } from './components/results-view';
+import { ResultsSkeleton } from './components/results-skeleton';
 
 // Category codes live-verified against Redbubble search titles (2026-07-12).
 const PRODUCT_TYPES: { label: string; iaCode: string }[] = [
@@ -36,6 +39,9 @@ type RunState =
   | { kind: 'compare-done'; reportPath: string; keywords: number; skipped: string[] }
   | { kind: 'error'; message: string };
 
+const inputClass =
+  'w-full rounded-md border border-hairline bg-panel p-2 text-ink placeholder:text-faint focus:outline-none focus:ring-1 focus:ring-brand';
+
 function SettingsScreen(props: {
   settings: UiSettings | null;
   onSaved: (settings: UiSettings) => void;
@@ -60,12 +66,12 @@ function SettingsScreen(props: {
   };
 
   return (
-    <div className="mx-auto max-w-md space-y-4">
-      <h2 className="text-lg font-semibold">AI Provider Settings</h2>
+    <div className="mx-auto max-w-md space-y-4 rounded-lg border border-hairline bg-elevated p-5">
+      <h2 className="text-lg font-semibold text-ink">AI Provider Settings</h2>
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Provider</span>
+        <span className="text-sm font-medium text-muted">Provider</span>
         <select
-          className="w-full rounded border border-gray-300 p-2"
+          className={inputClass}
           value={provider}
           onChange={(e) => setProvider(e.target.value as UiSettings['ai']['provider'])}
         >
@@ -75,30 +81,20 @@ function SettingsScreen(props: {
         </select>
       </label>
       <label className="block space-y-1">
-        <span className="text-sm font-medium">Model</span>
-        <input
-          className="w-full rounded border border-gray-300 p-2"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          placeholder="e.g. gpt-5.4-mini"
-        />
+        <span className="text-sm font-medium text-muted">Model</span>
+        <input className={inputClass} value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. gpt-5.4-mini" />
       </label>
       <label className="block space-y-1">
-        <span className="text-sm font-medium">API Key</span>
-        <input
-          type="password"
-          className="w-full rounded border border-gray-300 p-2"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-        />
+        <span className="text-sm font-medium text-muted">API Key</span>
+        <input type="password" className={inputClass} value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
       </label>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {saved && <p className="text-sm text-green-700">Settings saved.</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
+      {saved && <p className="text-sm text-brand">Settings saved.</p>}
       <div className="flex gap-2">
-        <button className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50" onClick={save} disabled={!model || !apiKey}>
+        <button className="rounded-md bg-brand px-4 py-2 text-canvas disabled:opacity-50" onClick={save} disabled={!model || !apiKey}>
           Save
         </button>
-        <button className="rounded border border-gray-300 px-4 py-2" onClick={props.onBack}>
+        <button className="rounded-md border border-hairline bg-panel px-4 py-2 text-ink" onClick={props.onBack}>
           Back
         </button>
       </div>
@@ -107,9 +103,10 @@ function SettingsScreen(props: {
 }
 
 export function App() {
-  const [view, setResultView] = useState<'search' | 'results'>('search');
+  const [view, setResultView] = useState<'search' | 'results' | 'history'>('search');
   const [resultData, setResultData] = useState<ResearchData | null>(null);
   const [reportPath, setReportPath] = useState('');
+  const [resultsLoading, setResultsLoading] = useState(false);
   const [settings, setSettings] = useState<UiSettings | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -134,21 +131,24 @@ export function App() {
     setRun({ kind: 'running', stage: null });
     const response = await window.api.startResearch({ keyword, productTypeIaCode, sortOrder });
     if (response.ok) {
-      // The completed session is rendered natively in-app (Doc 005 §4.1 UI
-      // "report viewer"). The standalone HTML report (Doc 010) is still
-      // generated and reachable from the results view.
+      setReportPath(response.reportPath);
+      setResultsLoading(true);
+      setResultView('results');
       const data = await window.api.getResearchData(response.sessionId);
       setResultData(data);
-      setReportPath(response.reportPath);
+      setResultsLoading(false);
       setRun({ kind: 'idle' });
-      setResultView('results');
     } else {
       setRun({ kind: 'error', message: response.error });
     }
   };
 
   const startComparison = async () => {
-    const keywords = compareInput.split(/[,\n]/).map((k) => k.trim()).filter(Boolean).slice(0, 5);
+    const keywords = compareInput
+      .split(/[,\n]/)
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .slice(0, 5);
     if (keywords.length < 2) {
       setRun({ kind: 'error', message: 'Enter 2–5 keywords to compare (comma or newline separated).' });
       return;
@@ -165,54 +165,89 @@ export function App() {
   const handleNewSearch = () => {
     setResultData(null);
     setReportPath('');
+    setResultsLoading(false);
     setKeyword('');
     setRun({ kind: 'idle' });
     setResultView('search');
   };
 
-  if (view === 'results' && resultData) {
+  const handleHistory = () => {
+    setResultView('history');
+  };
+
+  const handleSelectSession = async (sessionId: string, sessionReportPath: string) => {
+    setReportPath(sessionReportPath);
+    setResultsLoading(true);
+    setResultView('results');
+    const data = await window.api.getResearchData(sessionId);
+    setResultData(data);
+    setResultsLoading(false);
+  };
+
+  const provider = settings?.ai.provider ?? null;
+  const model = settings?.ai.model ?? null;
+
+  if (view === 'results') {
+    const title = resultData?.session?.keyword ?? 'Research Report';
     return (
-      <ResultsView
-        data={resultData}
-        reportPath={reportPath}
-        onNewSearch={handleNewSearch}
-        onOpenExternal={(path) => void window.api.openReport(path)}
-      />
+      <AppShell page="details" title={title} onNewResearch={handleNewSearch} onHistory={handleHistory} provider={provider} model={model}>
+        {resultsLoading || !resultData ? (
+          <ResultsSkeleton />
+        ) : (
+          <ResultsView
+            data={resultData}
+            reportPath={reportPath}
+            onNewSearch={handleNewSearch}
+            onOpenExternal={(path) => void window.api.openReport(path)}
+          />
+        )}
+      </AppShell>
+    );
+  }
+
+  if (view === 'history') {
+    return (
+      <AppShell
+        page="history"
+        title="Research History"
+        onNewResearch={handleNewSearch}
+        onHistory={handleHistory}
+        provider={provider}
+        model={model}
+      >
+        <HistoryView onSelectSession={handleSelectSession} onNewResearch={handleNewSearch} />
+      </AppShell>
     );
   }
 
   const running = run.kind === 'running';
 
   return (
-    <main className="min-h-screen bg-gray-50 p-8 text-gray-900">
-      <div className="mx-auto max-w-2xl space-y-6">
-        <header className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">Marketplace Research Lab</h1>
+    <AppShell page="new-research" title="New Research" onNewResearch={handleNewSearch} onHistory={handleHistory} provider={provider} model={model}>
+      <div className="mx-auto max-w-2xl space-y-6 p-8">
+        <div className="flex justify-end">
           <button
-            className="rounded border border-gray-300 px-3 py-1 text-sm"
+            type="button"
             onClick={() => setShowSettings((v) => !v)}
             disabled={running}
+            className="rounded-md border border-hairline bg-panel px-3 py-1 text-sm text-muted hover:text-ink disabled:opacity-50"
           >
             {showSettings ? 'Close Settings' : 'Settings'}
           </button>
-        </header>
+        </div>
 
         {showSettings ? (
-          <SettingsScreen
-            settings={settings}
-            onSaved={(saved) => setSettings(saved)}
-            onBack={() => setShowSettings(false)}
-          />
+          <SettingsScreen settings={settings} onSaved={setSettings} onBack={() => setShowSettings(false)} />
         ) : (
           <section className="space-y-4">
             {settingsLoaded && !settings && (
-              <p className="rounded bg-amber-100 p-3 text-sm text-amber-900">
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
                 Configure your AI provider in Settings before starting research.
               </p>
             )}
             <div className="flex gap-2">
               <input
-                className="flex-1 rounded border border-gray-300 p-2"
+                className="flex-1 rounded-md border border-hairline bg-panel p-2 text-ink placeholder:text-faint focus:outline-none focus:ring-1 focus:ring-brand"
                 placeholder="Enter a keyword, e.g. dog mom"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
@@ -222,7 +257,7 @@ export function App() {
                 disabled={running}
               />
               <button
-                className="rounded bg-blue-600 px-5 py-2 font-medium text-white disabled:opacity-50"
+                className="rounded-md bg-brand px-5 py-2 font-medium text-canvas disabled:opacity-50"
                 onClick={start}
                 disabled={running || !keyword.trim() || !settings}
               >
@@ -231,47 +266,51 @@ export function App() {
             </div>
             <div className="flex gap-2">
               <label className="flex-1 space-y-1 text-sm">
-                <span className="font-medium">Product Type</span>
+                <span className="font-medium text-muted">Product Type</span>
                 <select
-                  className="w-full rounded border border-gray-300 p-2"
+                  className={inputClass}
                   value={productTypeIaCode}
                   onChange={(e) => setProductTypeIaCode(e.target.value)}
                   disabled={running}
                 >
                   {PRODUCT_TYPES.map((type) => (
-                    <option key={type.iaCode} value={type.iaCode}>{type.label}</option>
+                    <option key={type.iaCode} value={type.iaCode}>
+                      {type.label}
+                    </option>
                   ))}
                 </select>
               </label>
               <label className="flex-1 space-y-1 text-sm">
-                <span className="font-medium">Sort By</span>
+                <span className="font-medium text-muted">Sort By</span>
                 <select
-                  className="w-full rounded border border-gray-300 p-2"
+                  className={inputClass}
                   value={sortOrder}
                   onChange={(e) => setSortOrder(e.target.value as SortOrder)}
                   disabled={running}
                 >
                   {SORT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
                 </select>
               </label>
             </div>
 
             {run.kind === 'running' && (
-              <div className="rounded border border-blue-200 bg-blue-50 p-4">
-                <p className="font-medium">Research in progress</p>
-                <p className="text-sm text-blue-900">
-                  {run.stage ? STAGE_LABELS[run.stage] ?? run.stage : 'Starting…'}
-                </p>
+              <div className="rounded-md border border-brand/30 bg-brand/10 p-4">
+                <p className="font-medium text-ink">Research in progress</p>
+                <p className="text-sm text-brand">{run.stage ? STAGE_LABELS[run.stage] ?? run.stage : 'Starting…'}</p>
               </div>
             )}
 
-            <details className="rounded border border-gray-200 bg-white p-3">
-              <summary className="cursor-pointer text-sm font-medium">Multi-Keyword Comparison (scout 2–5 keyword variations)</summary>
+            <details className="rounded-md border border-hairline bg-elevated p-3">
+              <summary className="cursor-pointer text-sm font-medium text-ink">
+                Multi-Keyword Comparison (scout 2–5 keyword variations)
+              </summary>
               <div className="mt-3 space-y-2">
                 <textarea
-                  className="w-full rounded border border-gray-300 p-2 text-sm"
+                  className={inputClass}
                   rows={3}
                   placeholder={'dog mom\ndog mama\ngolden retriever mom'}
                   value={compareInput}
@@ -279,27 +318,27 @@ export function App() {
                   disabled={running}
                 />
                 <button
-                  className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  className="rounded-md bg-violet px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                   onClick={startComparison}
                   disabled={running || !settings || compareInput.trim().length === 0}
                 >
                   Compare Keywords
                 </button>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-faint">
                   Scout pass: top 24 products per keyword, one comparative AI verdict, standalone report.
                 </p>
               </div>
             </details>
 
             {run.kind === 'compare-done' && (
-              <div className="space-y-2 rounded border border-indigo-200 bg-indigo-50 p-4">
-                <p className="font-medium text-indigo-900">Comparison completed</p>
-                <p className="text-sm">
+              <div className="space-y-2 rounded-md border border-violet/30 bg-violet/10 p-4">
+                <p className="font-medium text-violet">Comparison completed</p>
+                <p className="text-sm text-muted">
                   {run.keywords} keywords compared.
                   {run.skipped.length > 0 ? ` Skipped: ${run.skipped.join(', ')}.` : ''}
                 </p>
                 <button
-                  className="rounded bg-indigo-700 px-4 py-2 text-sm font-medium text-white"
+                  className="rounded-md bg-violet px-4 py-2 text-sm font-medium text-white"
                   onClick={() => void window.api.openReport(run.reportPath)}
                 >
                   Open Comparison Report
@@ -308,14 +347,14 @@ export function App() {
             )}
 
             {run.kind === 'error' && (
-              <div className="rounded border border-red-200 bg-red-50 p-4">
-                <p className="font-medium text-red-900">Research failed</p>
-                <p className="text-sm text-red-800">{run.message}</p>
+              <div className="rounded-md border border-danger/30 bg-danger/10 p-4">
+                <p className="font-medium text-danger">Research failed</p>
+                <p className="text-sm text-muted">{run.message}</p>
               </div>
             )}
           </section>
         )}
       </div>
-    </main>
+    </AppShell>
   );
 }

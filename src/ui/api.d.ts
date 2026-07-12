@@ -80,6 +80,19 @@ export type ResearchData = {
   analysis: ResearchAnalysis | null;
 };
 
+export type SessionListItem = {
+  id: string;
+  keyword: string;
+  marketplace: string;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  productType: string | null;
+  sortOrder: string | null;
+  productCount: number;
+  reportPath: string | null;
+};
+
 declare global {
   interface Window {
     api: {
@@ -89,6 +102,7 @@ declare global {
       compareKeywords: (request: CompareKeywordsRequest) => Promise<CompareKeywordsResponse>;
       openReport: (reportPath: string) => Promise<{ ok: true } | { ok: false; error: string }>;
       getResearchData: (sessionId: string) => Promise<ResearchData>;
+      listSessions: () => Promise<SessionListItem[]>;
       onProgress: (callback: (stage: string) => void) => () => void;
     };
   }

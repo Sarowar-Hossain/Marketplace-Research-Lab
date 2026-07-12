@@ -9,7 +9,7 @@ import {
   saveReportMetadata,
 } from '../storage/persistence';
 import { downloadProductImages } from '../storage/images';
-import { loadResearchData, type ResearchData } from '../storage/research-data';
+import { listSessions, loadResearchData, type ResearchData, type SessionListItem } from '../storage/research-data';
 import { createAiProvider } from '../ai/provider';
 import { analyzeProducts } from '../ai/analyze';
 import { generateReportHtml } from '../reports/generate';
@@ -182,6 +182,16 @@ export function loadResearchResult(
   const db = openDatabase(databaseFilePath, logger);
   try {
     return loadResearchData(db, sessionId);
+  } finally {
+    closeDatabase(db);
+  }
+}
+
+// Lists all past research sessions for the history view.
+export function loadSessionList(databaseFilePath: string, logger: Logger): SessionListItem[] {
+  const db = openDatabase(databaseFilePath, logger);
+  try {
+    return listSessions(db);
   } finally {
     closeDatabase(db);
   }

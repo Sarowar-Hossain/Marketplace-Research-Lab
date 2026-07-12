@@ -13,7 +13,7 @@ export function AnalysisSections({ sections }: { sections: AnalysisSection[] }) 
             <CardTitle>{section.title}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-700">{section.body}</p>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted">{section.body}</p>
           </CardContent>
         </Card>
       ))}

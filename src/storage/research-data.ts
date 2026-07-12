@@ -128,3 +128,43 @@ export function loadResearchData(db: Database, sessionId: string): ResearchData 
 
   return { session, products, analysis };
 }
+
+// Lightweight summary of a session for the history list.
+export type SessionListItem = {
+  id: string;
+  keyword: string;
+  marketplace: string;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  productType: string | null;
+  sortOrder: string | null;
+  productCount: number;
+  reportPath: string | null;
+};
+
+// Lists all sessions (newest first) with product count and report path.
+export function listSessions(db: Database): SessionListItem[] {
+  const rows = db
+    .prepare(
+      `SELECT s.id, s.keyword, s.marketplace, s.status, s.started_at, s.completed_at,
+              s.product_type, s.sort_order,
+              (SELECT COUNT(*) FROM products WHERE session_id = s.id) AS product_count,
+              (SELECT report_path FROM reports WHERE session_id = s.id ORDER BY generated_at DESC LIMIT 1) AS report_path
+       FROM research_sessions s
+       ORDER BY s.started_at DESC`,
+    )
+    .all() as Record<string, unknown>[];
+  return rows.map((row) => ({
+    id: row.id as string,
+    keyword: row.keyword as string,
+    marketplace: row.marketplace as string,
+    status: row.status as string,
+    startedAt: row.started_at as string,
+    completedAt: (row.completed_at as string | null) ?? null,
+    productType: (row.product_type as string | null) ?? null,
+    sortOrder: (row.sort_order as string | null) ?? null,
+    productCount: row.product_count as number,
+    reportPath: (row.report_path as string | null) ?? null,
+  }));
+}

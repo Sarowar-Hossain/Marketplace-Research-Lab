@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   compareKeywords: (request: unknown) => ipcRenderer.invoke('research:compare', request),
   openReport: (reportPath: string) => ipcRenderer.invoke('report:open', reportPath),
   getResearchData: (sessionId: string) => ipcRenderer.invoke('research:getData', sessionId),
+  listSessions: () => ipcRenderer.invoke('research:listSessions'),
   onProgress: (callback: (stage: string) => void) => {
     const listener = (_event: IpcRendererEvent, stage: string) => callback(stage);
     ipcRenderer.on('research:progress', listener);

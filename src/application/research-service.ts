@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 import {
   createResearchRunner,
   loadResearchResult as loadSessionResearch,
+  loadSessionList,
   type ProgressStage,
 } from '../research/bootstrap';
 import type { ResearchResult } from '../research/engine';
@@ -89,4 +90,9 @@ export function loadResearchResult(
   logger: Logger,
 ) {
   return loadSessionResearch(join(rootDirectory, 'storage', DATABASE_FILE_NAME), sessionId, logger);
+}
+
+// Lists all past research sessions for the history view.
+export function listResearchSessions(rootDirectory: string, logger: Logger) {
+  return loadSessionList(join(rootDirectory, 'storage', DATABASE_FILE_NAME), logger);
 }
