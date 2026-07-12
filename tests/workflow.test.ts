@@ -76,20 +76,27 @@ after(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+const progressLog: string[] = [];
 const runnerFor = (dbPath: string) =>
   createResearchRunner({
     databaseFilePath: dbPath, reportsDirectory: dir, marketplace: 'Redbubble',
     aiProvider: 'openai', aiModel: 'test-model', aiApiKey: 'test-key', logger,
+    onProgress: (stage) => progressLog.push(stage),
   });
 
 test('complete workflow persists products, AI analysis, a completed session, and an HTML report', async () => {
   const dbPath = join(dir, 'e2e.db');
   const runner = runnerFor(dbPath);
+  progressLog.length = 0;
   const result = await runner.research('  dog   mom ');
   runner.close();
 
   assert.ok(result.ok);
   assert.equal(result.ok && result.productsSaved, 2);
+  // Progress channel reports every workflow phase in order (UI consumes this).
+  assert.deepEqual(progressLog, [
+    'searching', 'discovering', 'extracting', 'normalizing', 'analyzing', 'generating-report',
+  ]);
 
   const db = new Database(dbPath, { readonly: true });
   const sess = db.prepare('SELECT * FROM research_sessions').all() as Record<string, unknown>[];

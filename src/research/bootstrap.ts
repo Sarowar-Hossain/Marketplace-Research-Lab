@@ -1,5 +1,5 @@
 import type { Logger } from 'pino';
-import { collectProducts } from '../marketplace/collect';
+import { collectProducts, type CollectionStage } from '../marketplace/collect';
 import { initializeDatabase } from '../storage/initialize';
 import { closeDatabase } from '../storage/database';
 import {
@@ -23,6 +23,10 @@ const PROJECT_NAME = 'Marketplace Research Lab';
 // values are supplied by the caller — this layer never loads config
 // (Doc 011 §11). The future Application layer decides when runners are
 // created and closed.
+// Progress stages surfaced to the caller (e.g. the UI): the Marketplace
+// collection stages plus the post-collection workflow phases.
+export type ProgressStage = CollectionStage | 'analyzing' | 'generating-report';
+
 export type ResearchRunnerOptions = {
   databaseFilePath: string;
   reportsDirectory: string;
@@ -31,6 +35,7 @@ export type ResearchRunnerOptions = {
   aiModel: string;
   aiApiKey: string;
   logger: Logger;
+  onProgress?: (stage: ProgressStage) => void;
 };
 
 export type ResearchRunner = {
@@ -62,11 +67,17 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
         aiProvider: options.aiProvider,
         aiModel: options.aiModel,
         logger: options.logger,
-        collectProducts,
+        collectProducts: (keyword, log, onStage) =>
+          collectProducts(keyword, log, (stage) => {
+            options.onProgress?.(stage);
+            onStage?.(stage);
+          }),
         saveResearchData: (session, products) =>
           saveResearchData(db, session, products, options.logger),
-        analyzeProducts: (keyword, products, logger) =>
-          analyzeProducts(keyword, products, aiProvider, logger),
+        analyzeProducts: (keyword, products, logger) => {
+          options.onProgress?.('analyzing');
+          return analyzeProducts(keyword, products, aiProvider, logger);
+        },
         saveAiAnalysis: (sessionId, analysis) =>
           saveAiAnalysis(
             db,
@@ -82,6 +93,7 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
         finalizeSession: (sessionId, status, completedAt) =>
           finalizeResearchSession(db, sessionId, status, completedAt, options.logger),
         generateReport: (sessionId) => {
+          options.onProgress?.('generating-report');
           // Report pipeline (Doc 010 §5): load stored data, generate HTML,
           // save the file, then record metadata — in that order, so a file
           // write failure never leaves a dangling database record (§13).

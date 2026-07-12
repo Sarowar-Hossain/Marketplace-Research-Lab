@@ -2,16 +2,20 @@
   "name": "marketplace-research-lab",
   "version": "0.1.0",
   "description": "Local-first desktop application that researches Redbubble products for a given keyword and generates an AI-powered HTML research report.",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/electron/main.js",
   "private": true,
   "license": "UNLICENSED",
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "typecheck": "tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "build": "vite build && tsc -p tsconfig.electron.json",
+    "start": "pnpm build && electron .",
+    "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
+    "rebuild:node": "pnpm rebuild better-sqlite3",
     "test": "tsc -p tsconfig.test.json && node --test \"test-dist/tests/*.test.js\""
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",

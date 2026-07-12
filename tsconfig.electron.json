@@ -3,10 +3,20 @@
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "rootDir": "electron",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "rootDir": ".",
     "noEmit": false,
     "outDir": "dist-electron",
     "types": ["node"]
   },
-  "include": ["electron"]
+  "include": [
+    "electron",
+    "src/application",
+    "src/research",
+    "src/marketplace",
+    "src/ai",
+    "src/reports",
+    "src/storage",
+    "src/shared"
+  ]
 }

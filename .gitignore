@@ -32,3 +32,6 @@ Thumbs.db
 
 # Test build output
 test-dist/
+
+# Local settings (contains API key)
+config/app.config.json
