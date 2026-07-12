@@ -21,6 +21,17 @@ export type CollectedProduct = {
   currency: string | null;
   imageUrls: string[];
   tags: string[];
+  availableProducts?: number | null;
+  artistDesignCount?: number | null;
+  rank?: number | null;
+};
+
+// What to search: category filter + sort order (label is stored on the
+// session; iaCode is the marketplace parameter).
+export type ResearchSearchOptions = {
+  productTypeLabel: string;
+  iaCode: string;
+  sortOrder: string;
 };
 
 // Progress stages emitted by the Marketplace collection facade (structural
@@ -43,6 +54,7 @@ export type ResearchDependencies = {
   marketplace: string;
   aiProvider: string;
   aiModel: string;
+  searchOptions: ResearchSearchOptions;
   logger: Logger;
   collectProducts: (
     keyword: string,
@@ -53,6 +65,7 @@ export type ResearchDependencies = {
   analyzeProducts: (keyword: string, products: CollectedProduct[], logger: Logger) => Promise<AnalysisResult>;
   saveAiAnalysis: (sessionId: string, analysis: AnalysisResult) => unknown;
   finalizeSession: (sessionId: string, status: string, completedAt: string | null) => unknown;
+  downloadImages: (sessionId: string) => Promise<number>;
   generateReport: (sessionId: string) => { reportPath: string };
 };
 
@@ -74,7 +87,14 @@ export async function research(rawKeyword: string, deps: ResearchDependencies): 
   }
   logger.info({ operation: 'research' }, 'Keyword validated');
 
-  let session = createResearchSession(validation.keyword, deps.marketplace, deps.aiProvider, deps.aiModel);
+  let session = createResearchSession(
+    validation.keyword,
+    deps.marketplace,
+    deps.aiProvider,
+    deps.aiModel,
+    deps.searchOptions.productTypeLabel,
+    deps.searchOptions.sortOrder,
+  );
   logger.info({ operation: 'research', sessionId: session.id }, 'Research session created');
 
   // The facade reports each collection phase as it begins, so lifecycle
@@ -127,6 +147,18 @@ export async function research(rawKeyword: string, deps: ResearchDependencies): 
       'Research session failed',
     );
     throw error;
+  }
+
+  // Image download is best-effort (Doc 004 §10 download status is per-image):
+  // a failure never affects the completed session — the report simply renders
+  // without the affected images.
+  try {
+    await deps.downloadImages(session.id);
+  } catch (error) {
+    logger.warn(
+      { operation: 'research', sessionId: session.id, error: error instanceof Error ? error.message : String(error) },
+      'Image download failed',
+    );
   }
 
   // Report generation runs after completion because a report requires a

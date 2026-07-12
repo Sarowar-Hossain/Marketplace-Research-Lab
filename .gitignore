@@ -35,3 +35,7 @@ test-dist/
 
 # Local settings (contains API key)
 config/app.config.json
+
+# Downloaded product images (contents ignored, folder kept)
+images/*
+!images/.gitkeep

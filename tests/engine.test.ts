@@ -24,6 +24,7 @@ function makeDeps(overrides: Partial<ResearchDependencies> = {}): { deps: Resear
   const calls: Calls = { collect: [], save: [], analyze: [], saveAnalysis: [], finalize: [], report: [] };
   const deps: ResearchDependencies = {
     marketplace: 'Redbubble', aiProvider: 'openai', aiModel: 'gpt-test', logger,
+    searchOptions: { productTypeLabel: 'T-Shirts', iaCode: 'u-tees', sortOrder: 'top selling' },
     collectProducts: async (kw, _log, onStage) => {
       calls.collect.push(kw);
       onStage?.('searching'); onStage?.('discovering'); onStage?.('extracting'); onStage?.('normalizing');
@@ -33,6 +34,7 @@ function makeDeps(overrides: Partial<ResearchDependencies> = {}): { deps: Resear
     analyzeProducts: async (kw) => { calls.analyze.push(kw); return { prompt: 'P', response: 'R' }; },
     saveAiAnalysis: (sessionId, analysis) => { calls.saveAnalysis.push({ sessionId, ...analysis }); return {}; },
     finalizeSession: (sessionId, status, completedAt) => { calls.finalize.push({ sessionId, status, completedAt }); return {}; },
+    downloadImages: async () => 0,
     generateReport: (sessionId) => { calls.report.push(sessionId); return { reportPath: '/reports/r.html' }; },
     ...overrides,
   };
@@ -99,7 +101,7 @@ test('persistence failure of research data: no analysis, no finalize', async () 
   assert.equal(calls.finalize.length, 0);
 });
 
-test('interaction order is collect, save, analyze, saveAnalysis, finalize, report', async () => {
+test('interaction order is collect, save, analyze, saveAnalysis, finalize, images, report', async () => {
   const order: string[] = [];
   const { deps } = makeDeps({
     collectProducts: async () => { order.push('collect'); return FAKE_PRODUCTS; },
@@ -107,8 +109,16 @@ test('interaction order is collect, save, analyze, saveAnalysis, finalize, repor
     analyzeProducts: async () => { order.push('analyze'); return { prompt: 'P', response: 'R' }; },
     saveAiAnalysis: () => { order.push('saveAnalysis'); return {}; },
     finalizeSession: (_id, status) => { order.push(`finalize:${status}`); return {}; },
+    downloadImages: async () => { order.push('images'); return 0; },
     generateReport: () => { order.push('report'); return { reportPath: '/r.html' }; },
   });
   await research('dog mom', deps);
-  assert.deepEqual(order, ['collect', 'save:analyzing', 'analyze', 'saveAnalysis', 'finalize:completed', 'report']);
+  assert.deepEqual(order, ['collect', 'save:analyzing', 'analyze', 'saveAnalysis', 'finalize:completed', 'images', 'report']);
+});
+
+test('image download failure is tolerated: research still succeeds with a report', async () => {
+  const { deps, calls } = makeDeps({ downloadImages: async () => { throw new Error('cdn down'); } });
+  const result = await research('dog mom', deps);
+  assert.ok(result.ok);
+  assert.equal(calls.report.length, 1, 'report still generated');
 });

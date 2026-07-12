@@ -1,19 +1,21 @@
 import type { Logger } from 'pino';
-import { collectProducts, type CollectionStage } from '../marketplace/collect';
+import { collectProducts, PRODUCT_CATEGORIES, type CollectionStage, type SortOrder } from '../marketplace/collect';
 import { initializeDatabase } from '../storage/initialize';
-import { closeDatabase } from '../storage/database';
+import { closeDatabase, openDatabase } from '../storage/database';
 import {
   saveResearchData,
   saveAiAnalysis,
   finalizeResearchSession,
   saveReportMetadata,
 } from '../storage/persistence';
-import { loadResearchData } from '../storage/research-data';
+import { downloadProductImages } from '../storage/images';
+import { loadResearchData, type ResearchData } from '../storage/research-data';
 import { createAiProvider } from '../ai/provider';
 import { analyzeProducts } from '../ai/analyze';
 import { generateReportHtml } from '../reports/generate';
 import { saveReportFile } from '../reports/save';
 import { research, type ResearchResult } from './engine';
+import { runComparison, type ComparisonResult } from './comparison';
 
 const PROJECT_NAME = 'Marketplace Research Lab';
 
@@ -25,21 +27,32 @@ const PROJECT_NAME = 'Marketplace Research Lab';
 // created and closed.
 // Progress stages surfaced to the caller (e.g. the UI): the Marketplace
 // collection stages plus the post-collection workflow phases.
-export type ProgressStage = CollectionStage | 'analyzing' | 'generating-report';
+export type ProgressStage =
+  | CollectionStage
+  | 'comparing'
+  | 'analyzing'
+  | 'downloading-images'
+  | 'generating-report';
 
 export type ResearchRunnerOptions = {
   databaseFilePath: string;
   reportsDirectory: string;
+  imagesDirectory: string;
   marketplace: string;
   aiProvider: string;
   aiModel: string;
   aiApiKey: string;
   logger: Logger;
   onProgress?: (stage: ProgressStage) => void;
+  // Search scope: category iaCode + sort order. Defaults: all departments,
+  // top selling (research analyzes what sells, not what exists).
+  productTypeIaCode?: string;
+  sortOrder?: SortOrder;
 };
 
 export type ResearchRunner = {
   research: (rawKeyword: string) => Promise<ResearchResult>;
+  compare: (rawKeywords: string[]) => Promise<ComparisonResult>;
   close: () => void;
 };
 
@@ -54,6 +67,10 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
     model: options.aiModel,
     apiKey: options.aiApiKey,
   });
+  const iaCode = options.productTypeIaCode ?? 'all-departments';
+  const sortOrder: SortOrder = options.sortOrder ?? 'top selling';
+  const productTypeLabel =
+    PRODUCT_CATEGORIES.find((category) => category.iaCode === iaCode)?.label ?? iaCode;
 
   return {
     research: (rawKeyword: string) => {
@@ -66,9 +83,10 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
         marketplace: options.marketplace,
         aiProvider: options.aiProvider,
         aiModel: options.aiModel,
+        searchOptions: { productTypeLabel, iaCode, sortOrder },
         logger: options.logger,
         collectProducts: (keyword, log, onStage) =>
-          collectProducts(keyword, log, (stage) => {
+          collectProducts(keyword, log, { iaCode, sortOrder }, (stage) => {
             options.onProgress?.(stage);
             onStage?.(stage);
           }),
@@ -76,7 +94,10 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
           saveResearchData(db, session, products, options.logger),
         analyzeProducts: (keyword, products, logger) => {
           options.onProgress?.('analyzing');
-          return analyzeProducts(keyword, products, aiProvider, logger);
+          return analyzeProducts(keyword, products, aiProvider, logger, {
+            productType: productTypeLabel,
+            sortOrder,
+          });
         },
         saveAiAnalysis: (sessionId, analysis) =>
           saveAiAnalysis(
@@ -92,6 +113,10 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
           ),
         finalizeSession: (sessionId, status, completedAt) =>
           finalizeResearchSession(db, sessionId, status, completedAt, options.logger),
+        downloadImages: (sessionId) => {
+          options.onProgress?.('downloading-images');
+          return downloadProductImages(db, sessionId, options.imagesDirectory, options.logger);
+        },
         generateReport: (sessionId) => {
           options.onProgress?.('generating-report');
           // Report pipeline (Doc 010 §5): load stored data, generate HTML,
@@ -113,6 +138,40 @@ export function createResearchRunner(options: ResearchRunnerOptions): ResearchRu
         },
       });
     },
+    compare: (rawKeywords: string[]) => {
+      if (!db.open) {
+        return Promise.reject(new Error('Database connection is closed'));
+      }
+      return runComparison({
+        db,
+        keywords: rawKeywords,
+        marketplace: options.marketplace,
+        productTypeLabel,
+        iaCode,
+        sortOrder,
+        aiProvider,
+        reportsDirectory: options.reportsDirectory,
+        logger: options.logger,
+        onProgress: (stage) => options.onProgress?.(stage as ProgressStage),
+      });
+    },
     close: () => closeDatabase(db),
   };
+}
+
+// Read-only access to a completed session's stored data for in-app rendering
+// (Doc 005 §4.1 UI "report viewer"). Opens a short-lived connection, loads the
+// session tree, and closes it. The Research Engine owns Storage access
+// (Doc 005 §8); callers never receive a database object.
+export function loadResearchResult(
+  databaseFilePath: string,
+  sessionId: string,
+  logger: Logger,
+): ResearchData {
+  const db = openDatabase(databaseFilePath, logger);
+  try {
+    return loadResearchData(db, sessionId);
+  } finally {
+    closeDatabase(db);
+  }
 }

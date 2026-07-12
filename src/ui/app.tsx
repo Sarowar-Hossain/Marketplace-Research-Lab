@@ -1,19 +1,38 @@
 import { useEffect, useState } from 'react';
-import type { UiSettings } from './api';
+import type { ResearchData, SortOrder, UiSettings } from './api';
+import { ResultsView } from './components/results-view';
+
+// Category codes live-verified against Redbubble search titles (2026-07-12).
+const PRODUCT_TYPES: { label: string; iaCode: string }[] = [
+  { label: 'All Departments', iaCode: 'all-departments' },
+  { label: 'T-Shirts', iaCode: 'u-tees' },
+  { label: 'Stickers', iaCode: 'all-stickers' },
+  { label: 'Hoodies & Sweatshirts', iaCode: 'u-sweatshirts' },
+  { label: 'Mugs', iaCode: 'u-mugs' },
+  { label: 'Phone Cases', iaCode: 'u-phone-cases' },
+];
+
+const SORT_OPTIONS: { label: string; value: SortOrder }[] = [
+  { label: 'Top Selling', value: 'top selling' },
+  { label: 'Relevant', value: 'relevant' },
+  { label: 'Recent', value: 'recent' },
+];
 
 const STAGE_LABELS: Record<string, string> = {
   searching: 'Searching Redbubble…',
   discovering: 'Collecting product links…',
   extracting: 'Extracting product data…',
   normalizing: 'Normalizing products…',
+  comparing: 'Scouting next keyword…',
   analyzing: 'Running AI analysis…',
+  'downloading-images': 'Downloading product images…',
   'generating-report': 'Generating HTML report…',
 };
 
 type RunState =
   | { kind: 'idle' }
   | { kind: 'running'; stage: string | null }
-  | { kind: 'done'; productsSaved: number; reportPath: string }
+  | { kind: 'compare-done'; reportPath: string; keywords: number; skipped: string[] }
   | { kind: 'error'; message: string };
 
 function SettingsScreen(props: {
@@ -87,10 +106,16 @@ function SettingsScreen(props: {
 }
 
 export function App() {
+  const [view, setResultView] = useState<'search' | 'results'>('search');
+  const [resultData, setResultData] = useState<ResearchData | null>(null);
+  const [reportPath, setReportPath] = useState('');
   const [settings, setSettings] = useState<UiSettings | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [keyword, setKeyword] = useState('');
+  const [compareInput, setCompareInput] = useState('');
+  const [productTypeIaCode, setProductTypeIaCode] = useState(PRODUCT_TYPES[0].iaCode);
+  const [sortOrder, setSortOrder] = useState<SortOrder>('top selling');
   const [run, setRun] = useState<RunState>({ kind: 'idle' });
 
   useEffect(() => {
@@ -106,13 +131,54 @@ export function App() {
 
   const start = async () => {
     setRun({ kind: 'running', stage: null });
-    const response = await window.api.startResearch(keyword);
+    const response = await window.api.startResearch({ keyword, productTypeIaCode, sortOrder });
     if (response.ok) {
-      setRun({ kind: 'done', productsSaved: response.productsSaved, reportPath: response.reportPath });
+      // The completed session is rendered natively in-app (Doc 005 §4.1 UI
+      // "report viewer"). The standalone HTML report (Doc 010) is still
+      // generated and reachable from the results view.
+      const data = await window.api.getResearchData(response.sessionId);
+      setResultData(data);
+      setReportPath(response.reportPath);
+      setRun({ kind: 'idle' });
+      setResultView('results');
     } else {
       setRun({ kind: 'error', message: response.error });
     }
   };
+
+  const startComparison = async () => {
+    const keywords = compareInput.split(/[,\n]/).map((k) => k.trim()).filter(Boolean).slice(0, 5);
+    if (keywords.length < 2) {
+      setRun({ kind: 'error', message: 'Enter 2–5 keywords to compare (comma or newline separated).' });
+      return;
+    }
+    setRun({ kind: 'running', stage: null });
+    const response = await window.api.compareKeywords({ keywords, productTypeIaCode, sortOrder });
+    if (response.ok) {
+      setRun({ kind: 'compare-done', reportPath: response.reportPath, keywords: response.keywords.length, skipped: response.skippedKeywords });
+    } else {
+      setRun({ kind: 'error', message: response.error });
+    }
+  };
+
+  const handleNewSearch = () => {
+    setResultData(null);
+    setReportPath('');
+    setKeyword('');
+    setRun({ kind: 'idle' });
+    setResultView('search');
+  };
+
+  if (view === 'results' && resultData) {
+    return (
+      <ResultsView
+        data={resultData}
+        reportPath={reportPath}
+        onNewSearch={handleNewSearch}
+        onOpenExternal={(path) => void window.api.openReport(path)}
+      />
+    );
+  }
 
   const running = run.kind === 'running';
 
@@ -162,6 +228,34 @@ export function App() {
                 {running ? 'Researching…' : 'Start Research'}
               </button>
             </div>
+            <div className="flex gap-2">
+              <label className="flex-1 space-y-1 text-sm">
+                <span className="font-medium">Product Type</span>
+                <select
+                  className="w-full rounded border border-gray-300 p-2"
+                  value={productTypeIaCode}
+                  onChange={(e) => setProductTypeIaCode(e.target.value)}
+                  disabled={running}
+                >
+                  {PRODUCT_TYPES.map((type) => (
+                    <option key={type.iaCode} value={type.iaCode}>{type.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex-1 space-y-1 text-sm">
+                <span className="font-medium">Sort By</span>
+                <select
+                  className="w-full rounded border border-gray-300 p-2"
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+                  disabled={running}
+                >
+                  {SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
 
             {run.kind === 'running' && (
               <div className="rounded border border-blue-200 bg-blue-50 p-4">
@@ -172,15 +266,42 @@ export function App() {
               </div>
             )}
 
-            {run.kind === 'done' && (
-              <div className="space-y-2 rounded border border-green-200 bg-green-50 p-4">
-                <p className="font-medium text-green-900">Research completed</p>
-                <p className="text-sm">{run.productsSaved} products collected and analyzed.</p>
+            <details className="rounded border border-gray-200 bg-white p-3">
+              <summary className="cursor-pointer text-sm font-medium">Multi-Keyword Comparison (scout 2–5 keyword variations)</summary>
+              <div className="mt-3 space-y-2">
+                <textarea
+                  className="w-full rounded border border-gray-300 p-2 text-sm"
+                  rows={3}
+                  placeholder={'dog mom\ndog mama\ngolden retriever mom'}
+                  value={compareInput}
+                  onChange={(e) => setCompareInput(e.target.value)}
+                  disabled={running}
+                />
                 <button
-                  className="rounded bg-green-700 px-4 py-2 text-sm font-medium text-white"
+                  className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  onClick={startComparison}
+                  disabled={running || !settings || compareInput.trim().length === 0}
+                >
+                  Compare Keywords
+                </button>
+                <p className="text-xs text-gray-500">
+                  Scout pass: top 24 products per keyword, one comparative AI verdict, standalone report.
+                </p>
+              </div>
+            </details>
+
+            {run.kind === 'compare-done' && (
+              <div className="space-y-2 rounded border border-indigo-200 bg-indigo-50 p-4">
+                <p className="font-medium text-indigo-900">Comparison completed</p>
+                <p className="text-sm">
+                  {run.keywords} keywords compared.
+                  {run.skipped.length > 0 ? ` Skipped: ${run.skipped.join(', ')}.` : ''}
+                </p>
+                <button
+                  className="rounded bg-indigo-700 px-4 py-2 text-sm font-medium text-white"
                   onClick={() => void window.api.openReport(run.reportPath)}
                 >
-                  Open HTML Report
+                  Open Comparison Report
                 </button>
               </div>
             )}

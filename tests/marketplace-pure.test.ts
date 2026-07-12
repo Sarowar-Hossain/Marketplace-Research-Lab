@@ -17,6 +17,8 @@ const base = (): ExtractedProduct => ({
   currency: null,
   imageUrls: [],
   tags: [],
+  availableProducts: null,
+  artistDesignCount: null,
 });
 
 // Doc 008 §10 — Stage 5 validation.

@@ -13,6 +13,8 @@ export type StoredSession = {
   aiModel: string;
   startedAt: string;
   completedAt: string | null;
+  productType: string | null;
+  sortOrder: string | null;
 };
 
 export type StoredProduct = {
@@ -26,7 +28,12 @@ export type StoredProduct = {
   currency: string | null;
   images: { imageUrl: string; localPath: string | null; displayOrder: number | null }[];
   tags: string[];
-  statistics: { favorites: number | null; availableProducts: number | null } | null;
+  statistics: {
+    favorites: number | null;
+    availableProducts: number | null;
+    rank: number | null;
+    artistDesignCount: number | null;
+  } | null;
 };
 
 export type StoredAnalysis = {
@@ -58,6 +65,8 @@ export function loadResearchData(db: Database, sessionId: string): ResearchData 
         aiModel: sessionRow.ai_model as string,
         startedAt: sessionRow.started_at as string,
         completedAt: (sessionRow.completed_at as string | null) ?? null,
+        productType: (sessionRow.product_type as string | null) ?? null,
+        sortOrder: (sessionRow.sort_order as string | null) ?? null,
       }
     : null;
 
@@ -72,12 +81,12 @@ export function loadResearchData(db: Database, sessionId: string): ResearchData 
   );
   const tagStmt = db.prepare('SELECT tag FROM product_tags WHERE product_id = ? ORDER BY rowid');
   const statsStmt = db.prepare(
-    'SELECT favorites, available_products FROM product_statistics WHERE product_id = ?',
+    'SELECT favorites, available_products, rank, artist_design_count FROM product_statistics WHERE product_id = ?',
   );
 
   const products: StoredProduct[] = productRows.map((row) => {
     const stats = statsStmt.get(row.id) as
-      | { favorites: number | null; available_products: number | null }
+      | { favorites: number | null; available_products: number | null; rank: number | null; artist_design_count: number | null }
       | undefined;
     return {
       id: row.id as string,
@@ -93,7 +102,12 @@ export function loadResearchData(db: Database, sessionId: string): ResearchData 
       ),
       tags: (tagStmt.all(row.id) as { tag: string }[]).map((t) => t.tag),
       statistics: stats
-        ? { favorites: stats.favorites, availableProducts: stats.available_products }
+        ? {
+            favorites: stats.favorites,
+            availableProducts: stats.available_products,
+            rank: stats.rank,
+            artistDesignCount: stats.artist_design_count,
+          }
         : null,
     };
   });

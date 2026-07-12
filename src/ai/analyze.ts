@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Logger } from 'pino';
 import type { AiProvider } from './provider';
-import { buildAnalysisPrompt, type AnalysisProduct } from './prompt';
+import { buildAnalysisPrompt, type AnalysisProduct, type AnalysisContext } from './prompt';
 
 // The completed analysis: the exact prompt sent and the validated response
 // received. Stored as-is so the analysis remains reproducible (Doc 004 §14).
@@ -23,6 +23,7 @@ export async function analyzeProducts(
   products: AnalysisProduct[],
   provider: AiProvider,
   logger: Logger,
+  context?: AnalysisContext,
 ): Promise<AiAnalysisResult> {
   // Stage 1 — Input Validation (Doc 009 §6).
   if (products.length === 0) {
@@ -30,7 +31,7 @@ export async function analyzeProducts(
   }
 
   // Stages 2–3 — Context Preparation + Prompt Construction.
-  const prompt = buildAnalysisPrompt(keyword, products);
+  const prompt = buildAnalysisPrompt(keyword, products, context);
 
   // Stage 4 — AI Provider Request.
   logger.info({ operation: 'analysis' }, 'AI request started');

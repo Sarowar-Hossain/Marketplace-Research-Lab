@@ -14,6 +14,10 @@ export type ExtractedProduct = {
   currency: string | null;
   imageUrls: string[];
   tags: string[];
+  // Competition/availability signals (live-verified sources, all optional):
+  // "View this design on +N products" and the artist's "N designs" portfolio size.
+  availableProducts: number | null;
+  artistDesignCount: number | null;
 };
 
 // Structured data collected from the page: JSON-LD blocks plus OpenGraph/meta
@@ -26,6 +30,11 @@ type PageData = {
   ogImage: string | null;
   metaKeywords: string | null;
   docTitle: string | null;
+  // Raw tags from the on-page "All Product Tags" section — the listing's real
+  // SEO tags, richer and cleaner than meta keywords (live-verified).
+  pageTags: string[];
+  availableProductsText: string | null;
+  artistDesignsText: string | null;
 };
 
 type JsonObject = Record<string, unknown>;
@@ -149,15 +158,39 @@ function extractTags(keywords: unknown, metaKeywords: string | null): string[] {
 }
 
 // Live Redbubble pages do not publish JSON-LD brand/category (verified
-// 2026-07-12), so the artist falls back to the og:title convention
-// ("… for Sale by <artist>") and the product type to the URL path segment
-// ("/i/<type>/…").
+// 2026-07-12), so the artist falls back to the URL slug convention
+// ("…-by-<artist>/<id>/…" — the most stable source), then the og:title
+// convention ("… for Sale by <artist>"); the product type falls back to the
+// URL path segment ("/i/<type>/…").
 function artistFromTitle(title: string | null): string | null {
   if (!title) {
     return null;
   }
   const match = title.match(/\bfor sale by\s+(.+?)\s*$/i);
   return match ? match[1].trim() : null;
+}
+
+function artistFromUrl(url: string): string | null {
+  try {
+    const match = new URL(url).pathname.match(/-by-([^/]+)\//);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Parses counts like "on +73 products" / "5691 designs" (thousands separators
+// tolerated). Returns null when the text is absent.
+function countFromText(text: string | null): number | null {
+  if (!text) {
+    return null;
+  }
+  const match = text.match(/([\d,.]+)/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[1].replace(/[,.]/g, ''));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function productTypeFromUrl(url: string): string | null {
@@ -183,6 +216,7 @@ function buildExtractedProduct(url: string, product: JsonObject | null, data: Pa
     description: (product ? asString(product['description']) : null) ?? data.ogDescription,
     artistName:
       (product ? nameOf(product['brand']) ?? nameOf(product['author']) : null) ??
+      artistFromUrl(url) ??
       artistFromTitle(data.ogTitle) ??
       artistFromTitle(docTitle),
     productType:
@@ -191,7 +225,12 @@ function buildExtractedProduct(url: string, product: JsonObject | null, data: Pa
     price: offer ? toNumber(offer['price']) : null,
     currency: offer ? asString(offer['priceCurrency']) : null,
     imageUrls,
-    tags: extractTags(product ? product['keywords'] : null, data.metaKeywords),
+    tags:
+      data.pageTags.length > 0
+        ? data.pageTags
+        : extractTags(product ? product['keywords'] : null, data.metaKeywords),
+    availableProducts: countFromText(data.availableProductsText),
+    artistDesignCount: countFromText(data.artistDesignsText),
   };
 }
 
@@ -206,11 +245,41 @@ export async function extractProduct(page: Page, productUrl: string, logger: Log
     // on live marketplace pages with persistent connections.
     await page.goto(productUrl, { waitUntil: 'domcontentloaded' });
 
+    // The artist portfolio section ("N designs") renders client-side below the
+    // fold; scroll and give it a short bounded wait. Best-effort — the field
+    // stays null when the section never appears.
+    try {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForFunction(() => /\d[\d,.]*\s+designs/i.test(document.body.innerText), undefined, {
+        timeout: 2500,
+      });
+    } catch {
+      // Section did not render in time; artistDesignCount will be null.
+    }
+
     const data: PageData = await page.evaluate(() => {
       const metaContent = (selector: string): string | null => {
         const element = document.querySelector(selector);
         return element ? element.getAttribute('content') : null;
       };
+
+      // "All Product Tags" section: the listing's raw tags, located by heading
+      // text (structural, no CSS classes). Sibling sections ("Related Tags")
+      // mix in unrelated trending topics and are deliberately ignored.
+      let pageTags: string[] = [];
+      for (const heading of Array.from(document.querySelectorAll('h2,h3,h4,div,span'))) {
+        if ((heading.textContent ?? '').trim() === 'All Product Tags' && heading.parentElement) {
+          pageTags = Array.from(heading.parentElement.querySelectorAll('a[href*="/shop/"]'))
+            .map((anchor) => (anchor.textContent ?? '').trim())
+            .filter((tag) => tag.length > 0);
+          if (pageTags.length > 0) break;
+        }
+      }
+
+      const bodyText = document.body.innerText;
+      const availableMatch = bodyText.match(/(?:on|in)\s*\+?([\d,.]+)\s+products/i);
+      const designsMatch = bodyText.match(/([\d,.]+)\s+designs/i);
+
       return {
         ldScripts: Array.from(document.querySelectorAll('script[type="application/ld+json"]')).map(
           (script) => script.textContent ?? '',
@@ -220,6 +289,9 @@ export async function extractProduct(page: Page, productUrl: string, logger: Log
         ogImage: metaContent('meta[property="og:image"]'),
         metaKeywords: metaContent('meta[name="keywords"]'),
         docTitle: document.title || null,
+        pageTags,
+        availableProductsText: availableMatch ? availableMatch[0] : null,
+        artistDesignsText: designsMatch ? designsMatch[0] : null,
       };
     });
 

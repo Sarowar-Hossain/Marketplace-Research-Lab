@@ -25,6 +25,10 @@ export type ResearchSession = {
   status: ResearchSessionStatus;
   startedAt: string;
   completedAt: string | null;
+  // What was searched: category label and sort order (reproducibility + report
+  // header). Null for sessions predating the research-improvements work.
+  productType: string | null;
+  sortOrder: string | null;
 };
 
 export function createResearchSession(
@@ -32,6 +36,8 @@ export function createResearchSession(
   marketplace: string,
   aiProvider: string,
   aiModel: string,
+  productType: string | null = null,
+  sortOrder: string | null = null,
 ): ResearchSession {
   return {
     id: randomUUID(),
@@ -42,6 +48,8 @@ export function createResearchSession(
     status: 'created',
     startedAt: new Date().toISOString(),
     completedAt: null,
+    productType,
+    sortOrder,
   };
 }
 

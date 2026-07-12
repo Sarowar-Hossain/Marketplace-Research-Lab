@@ -9,6 +9,32 @@ const REDBUBBLE_SEARCH_URL = 'https://www.redbubble.com/shop';
 const RESULTS_SELECTOR = 'a[href*="/i/"]';
 const DEFAULT_RESULTS_TIMEOUT_MS = 20000;
 
+export type SortOrder = 'top selling' | 'relevant' | 'recent';
+
+export type SearchOptions = {
+  // Category filter code (live-verified 2026-07-12: all-departments, u-tees,
+  // all-stickers, u-sweatshirts, u-mugs, u-phone-cases).
+  iaCode?: string;
+  // Research default is "top selling": the goal is to analyze what sells,
+  // not what exists (seller review decision #5).
+  sortOrder?: SortOrder;
+  resultsTimeoutMs?: number;
+  // Caps how many discovered products are extracted. Used by comparison mode
+  // (scout pass over the top of the ranking); unset = all discovered products.
+  maxProducts?: number;
+};
+
+// Builds the search URL in the live-verified parameter format:
+// /shop?iaCode=<code>&sortOrder=<sort>&includeMatureContent=false&query=<kw>
+export function buildSearchUrl(keyword: string, options: SearchOptions = {}): string {
+  const params = new URLSearchParams();
+  params.set('iaCode', options.iaCode ?? 'all-departments');
+  params.set('sortOrder', options.sortOrder ?? 'top selling');
+  params.set('includeMatureContent', 'false');
+  params.set('query', keyword);
+  return `${REDBUBBLE_SEARCH_URL}?${params.toString()}`;
+}
+
 // Performs the Marketplace Search stage (Doc 008 §6): navigate the provided
 // page to the Redbubble search results for an already-validated keyword and
 // wait until product links have rendered. No product information is read here.
@@ -18,14 +44,16 @@ export async function searchKeyword(
   page: Page,
   keyword: string,
   logger: Logger,
-  resultsTimeoutMs: number = DEFAULT_RESULTS_TIMEOUT_MS,
+  options: SearchOptions = {},
 ): Promise<void> {
-  logger.info({ operation: 'search' }, 'Search started');
+  logger.info(
+    { operation: 'search', iaCode: options.iaCode ?? 'all-departments', sortOrder: options.sortOrder ?? 'top selling' },
+    'Search started',
+  );
   try {
-    const url = `${REDBUBBLE_SEARCH_URL}?query=${encodeURIComponent(keyword)}`;
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.goto(buildSearchUrl(keyword, options), { waitUntil: 'domcontentloaded' });
     try {
-      await page.waitForSelector(RESULTS_SELECTOR, { timeout: resultsTimeoutMs });
+      await page.waitForSelector(RESULTS_SELECTOR, { timeout: options.resultsTimeoutMs ?? DEFAULT_RESULTS_TIMEOUT_MS });
     } catch {
       const blocked = await page.evaluate(() =>
         /just a moment|cf-chl|challenge-platform|captcha/i.test(

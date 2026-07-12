@@ -1,10 +1,12 @@
 import type { Page } from 'playwright';
 import type { Logger } from 'pino';
 
-// A discovered product reference. Kept internal to the Marketplace module until
-// another module actually requires it.
+// A discovered product reference. `rank` is the 1-based position in the search
+// results; when the search is sorted by "top selling" this is the demand rank —
+// Redbubble's closest public proxy for sales (no ratings/reviews are exposed).
 export type ProductReference = {
   url: string;
+  rank: number;
 };
 
 // Redbubble product pages live under an "/i/" path segment. Discovery relies on
@@ -42,7 +44,7 @@ export async function discoverProducts(page: Page, logger: Logger): Promise<Prod
       continue;
     }
     seen.add(canonical);
-    products.push({ url: canonical });
+    products.push({ url: canonical, rank: products.length + 1 });
   }
 
   logger.info({ operation: 'discovery', count: products.length }, 'Products Discovered');

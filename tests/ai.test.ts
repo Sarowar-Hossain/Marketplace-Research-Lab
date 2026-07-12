@@ -13,15 +13,29 @@ const products: AnalysisProduct[] = [
 ];
 
 // Doc 009 §8 — prompt construction is deterministic and includes the context.
-test('prompt is deterministic and contains keyword, sections, and product data', () => {
-  const p1 = buildAnalysisPrompt('dog mom', products);
-  const p2 = buildAnalysisPrompt('dog mom', products);
+test('prompt is deterministic and contains keyword, seller sections, and product data', () => {
+  const context = { productType: 'T-Shirts', sortOrder: 'top selling' };
+  const p1 = buildAnalysisPrompt('dog mom', products, context);
+  const p2 = buildAnalysisPrompt('dog mom', products, context);
   assert.equal(p1, p2);
   assert.match(p1, /"dog mom"/);
-  assert.match(p1, /Niche Summary/);
-  assert.match(p1, /Strategic Recommendations/);
+  assert.match(p1, /target product category is: T-Shirts/);
+  assert.match(p1, /TOP SELLING/);
+  for (const section of [
+    'Niche Summary', 'Design Briefs', 'Recommended Tags', 'Title Formulas',
+    'Saturation Verdict', 'Differentiation Strategy', 'Buyer Intent & Trends',
+  ]) {
+    assert.ok(p1.includes(section), `missing section: ${section}`);
+  }
+  assert.match(p1, /ENTER WITH DIFFERENT ANGLE/);
+  assert.match(p1, /Market aggregates/);
   assert.match(p1, /Cool Mug/);
   assert.match(p1, /coffee/);
+});
+
+test('non-top-selling sort states that rank is display order', () => {
+  const prompt = buildAnalysisPrompt('k', products, { productType: 'All Departments', sortOrder: 'recent' });
+  assert.match(prompt, /not sales/);
 });
 
 test('long descriptions are truncated deterministically', () => {

@@ -14,16 +14,18 @@ const data = (): ReportData => ({
   session: {
     id: 's1', keyword: 'dog mom', marketplace: 'Redbubble', status: 'completed',
     aiProvider: 'openai', aiModel: 'gpt-test', startedAt: '2026-07-12T11:00:00Z', completedAt: '2026-07-12T11:05:00Z',
+    productType: 'T-Shirts', sortOrder: 'top selling',
   },
   products: [
     { id: 'p1', title: 'Cool Mug', productUrl: 'https://rb/i/mug/1', artistName: 'ArtistX', description: null,
       productType: 'mug', price: 12.5, currency: 'USD',
       images: [{ imageUrl: 'https://img/1', localPath: null, displayOrder: 0 }],
-      tags: ['coffee', 'funny'], statistics: null },
+      tags: ['coffee', 'funny'],
+      statistics: { favorites: null, availableProducts: 73, rank: 1, artistDesignCount: 5691 } },
     { id: 'p2', title: 'Second', productUrl: 'https://rb/i/st/2', artistName: null, description: null,
       productType: null, price: null, currency: null,
       images: [{ imageUrl: 'https://img/2', localPath: 'images/p2.jpg', displayOrder: 0 }],
-      tags: [], statistics: { favorites: 42, availableProducts: null } },
+      tags: [], statistics: { favorites: 42, availableProducts: null, rank: 2, artistDesignCount: null } },
   ],
   analysis: {
     provider: 'openai', model: 'gpt-test', prompt: 'P',
@@ -46,10 +48,12 @@ test('report contains header, summary, products in order, and verbatim analysis'
 });
 
 // Doc 010 §9 — offline: only local images referenced, never remote URLs.
-test('only locally stored images are referenced', () => {
+// Root-relative stored paths get a "../" prefix because the report file lives
+// one level down in reports/.
+test('only locally stored images are referenced, relative to the report location', () => {
   const html = generateReportHtml(data());
   assert.ok(!html.includes('src="https://img/1"'), 'remote image must not be referenced');
-  assert.ok(html.includes('src="images/p2.jpg"'), 'local image must be referenced');
+  assert.ok(html.includes('src="../images/p2.jpg"'), 'local image referenced relative to reports/');
 });
 
 // Doc 010 §2 — deterministic for identical input.

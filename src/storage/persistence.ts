@@ -18,6 +18,8 @@ export type ResearchSessionInput = {
   startedAt: string;
   completedAt?: string | null;
   reportId?: string | null;
+  productType?: string | null;
+  sortOrder?: string | null;
 };
 
 export type ProductInput = {
@@ -30,6 +32,11 @@ export type ProductInput = {
   currency: string | null;
   imageUrls: string[];
   tags: string[];
+  // Demand/competition signals (optional; a statistics row is written only
+  // when at least one is present).
+  rank?: number | null;
+  availableProducts?: number | null;
+  artistDesignCount?: number | null;
 };
 
 export type SaveResult = {
@@ -58,9 +65,9 @@ export function saveResearchData(
 ): SaveResult {
   const insertSession = db.prepare(
     `INSERT INTO research_sessions
-       (id, keyword, marketplace, status, ai_provider, ai_model, started_at, completed_at, report_id)
+       (id, keyword, marketplace, status, ai_provider, ai_model, started_at, completed_at, report_id, product_type, sort_order)
      VALUES
-       (@id, @keyword, @marketplace, @status, @aiProvider, @aiModel, @startedAt, @completedAt, @reportId)`,
+       (@id, @keyword, @marketplace, @status, @aiProvider, @aiModel, @startedAt, @completedAt, @reportId, @productType, @sortOrder)`,
   );
   const insertProduct = db.prepare(
     `INSERT INTO products
@@ -76,6 +83,10 @@ export function saveResearchData(
     `INSERT INTO product_tags (id, product_id, tag)
      VALUES (@id, @productId, @tag)`,
   );
+  const insertStatistics = db.prepare(
+    `INSERT INTO product_statistics (product_id, favorites, available_products, rank, artist_design_count)
+     VALUES (@productId, NULL, @availableProducts, @rank, @artistDesignCount)`,
+  );
 
   const writeAll = db.transaction(() => {
     insertSession.run({
@@ -88,6 +99,8 @@ export function saveResearchData(
       startedAt: session.startedAt,
       completedAt: session.completedAt ?? null,
       reportId: session.reportId ?? null,
+      productType: session.productType ?? null,
+      sortOrder: session.sortOrder ?? null,
     });
 
     const createdAt = new Date().toISOString();
@@ -118,6 +131,13 @@ export function saveResearchData(
 
       for (const tag of product.tags) {
         insertTag.run({ id: randomUUID(), productId, tag });
+      }
+
+      const rank = product.rank ?? null;
+      const availableProducts = product.availableProducts ?? null;
+      const artistDesignCount = product.artistDesignCount ?? null;
+      if (rank !== null || availableProducts !== null || artistDesignCount !== null) {
+        insertStatistics.run({ productId, rank, availableProducts, artistDesignCount });
       }
     }
   });

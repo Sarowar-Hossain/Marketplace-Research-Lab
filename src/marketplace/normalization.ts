@@ -13,6 +13,11 @@ export type NormalizedProduct = {
   currency: string | null;
   imageUrls: string[];
   tags: string[];
+  availableProducts: number | null;
+  artistDesignCount: number | null;
+  // 1-based search-result position, attached by the collection facade; the
+  // demand rank when the search is sorted by "top selling".
+  rank: number | null;
 };
 
 // Trims leading/trailing whitespace and normalizes line endings (\r\n and lone
@@ -66,5 +71,8 @@ export function normalizeProduct(product: ExtractedProduct): NormalizedProduct {
     currency: trimToNull(product.currency),
     imageUrls: cleanStringList(product.imageUrls),
     tags: cleanStringList(product.tags),
+    availableProducts: product.availableProducts,
+    artistDesignCount: product.artistDesignCount,
+    rank: null,
   };
 }

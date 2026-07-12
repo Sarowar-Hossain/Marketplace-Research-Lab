@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS research_sessions (
   ai_model TEXT NOT NULL,
   started_at DATETIME NOT NULL,
   completed_at DATETIME,
-  report_id TEXT
+  report_id TEXT,
+  product_type TEXT,
+  sort_order TEXT
 );
 
 CREATE TABLE IF NOT EXISTS products (
@@ -52,6 +54,8 @@ CREATE TABLE IF NOT EXISTS product_statistics (
   product_id TEXT PRIMARY KEY NOT NULL,
   favorites INTEGER,
   available_products INTEGER,
+  rank INTEGER,
+  artist_design_count INTEGER,
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 
@@ -86,9 +90,26 @@ CREATE INDEX IF NOT EXISTS idx_ai_analysis_session_id ON ai_analysis(session_id)
 CREATE INDEX IF NOT EXISTS idx_reports_session_id ON reports(session_id);
 `;
 
+// Columns added after the initial release. CREATE TABLE IF NOT EXISTS does not
+// alter existing tables, so databases created before these columns existed get
+// them through a guarded ALTER — idempotent initialization, not a migration
+// framework (checked against PRAGMA table_info on every startup).
+const COLUMN_ADDITIONS: { table: string; column: string; definition: string }[] = [
+  { table: 'research_sessions', column: 'product_type', definition: 'TEXT' },
+  { table: 'research_sessions', column: 'sort_order', definition: 'TEXT' },
+  { table: 'product_statistics', column: 'rank', definition: 'INTEGER' },
+  { table: 'product_statistics', column: 'artist_design_count', definition: 'INTEGER' },
+];
+
 // Creates the documented tables and indexes on the provided connection. The
 // statements are idempotent (IF NOT EXISTS) so applying the schema to an
 // already-initialized database is safe.
 export function createSchema(db: Database): void {
   db.exec(SCHEMA_SQL);
+  for (const { table, column, definition } of COLUMN_ADDITIONS) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!columns.some((existing) => existing.name === column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
 }

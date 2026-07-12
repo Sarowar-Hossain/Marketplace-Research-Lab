@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 import { initializeDatabase } from '../src/storage/initialize';
-import { closeDatabase } from '../src/storage/database';
+import { openDatabase, closeDatabase } from '../src/storage/database';
+import { createSchema } from '../src/storage/schema';
 import {
   saveResearchData,
   saveAiAnalysis,
@@ -137,6 +138,53 @@ test('saveReportMetadata records the report and links the session atomically', (
   // Orphan session id is rejected by the FK, and the transaction leaves nothing.
   assert.throws(() => saveReportMetadata(db, { sessionId: 'nope', reportPath: '/x.html' }, logger));
   assert.equal((db.prepare('SELECT COUNT(*) c FROM reports').get() as { c: number }).c, 1);
+  closeDatabase(db);
+});
+
+test('guarded ALTER adds new columns to pre-existing databases', () => {
+  const db = openDatabase(join(dir, 'old-schema.db'), logger);
+  // Simulate a database created before the research-improvements columns.
+  db.exec(`CREATE TABLE research_sessions (
+    id TEXT PRIMARY KEY NOT NULL, keyword TEXT NOT NULL, marketplace TEXT NOT NULL,
+    status TEXT NOT NULL, ai_provider TEXT NOT NULL, ai_model TEXT NOT NULL,
+    started_at DATETIME NOT NULL, completed_at DATETIME, report_id TEXT)`);
+  db.exec(`CREATE TABLE product_statistics (
+    product_id TEXT PRIMARY KEY NOT NULL, favorites INTEGER, available_products INTEGER)`);
+
+  createSchema(db);
+  createSchema(db); // idempotent second run
+
+  const sessionCols = (db.prepare('PRAGMA table_info(research_sessions)').all() as { name: string }[]).map((c) => c.name);
+  const statsCols = (db.prepare('PRAGMA table_info(product_statistics)').all() as { name: string }[]).map((c) => c.name);
+  assert.ok(sessionCols.includes('product_type') && sessionCols.includes('sort_order'));
+  assert.ok(statsCols.includes('rank') && statsCols.includes('artist_design_count'));
+  closeDatabase(db);
+});
+
+test('rank and competition signals are persisted; session stores search scope', () => {
+  const db = initializeDatabase(join(dir, 'signals.db'), logger);
+  const withSignals = [
+    { ...products[0], rank: 1, availableProducts: 73, artistDesignCount: 5691 },
+    { ...products[1], rank: 2 },
+  ];
+  saveResearchData(db, { ...session, productType: 'T-Shirts', sortOrder: 'top selling' }, withSignals, logger);
+
+  const sess = db.prepare("SELECT product_type, sort_order FROM research_sessions WHERE id='sess-1'").get() as Record<string, unknown>;
+  assert.equal(sess.product_type, 'T-Shirts');
+  assert.equal(sess.sort_order, 'top selling');
+
+  const stats = db.prepare('SELECT * FROM product_statistics ORDER BY rank').all() as Record<string, unknown>[];
+  assert.equal(stats.length, 2);
+  assert.equal(stats[0].rank, 1);
+  assert.equal(stats[0].available_products, 73);
+  assert.equal(stats[0].artist_design_count, 5691);
+  assert.equal(stats[1].rank, 2);
+  assert.equal(stats[1].available_products, null);
+
+  const loaded = loadResearchData(db, 'sess-1');
+  assert.equal(loaded.session?.productType, 'T-Shirts');
+  assert.equal(loaded.products[0].statistics?.rank, 1);
+  assert.equal(loaded.products[0].statistics?.artistDesignCount, 5691);
   closeDatabase(db);
 });
 

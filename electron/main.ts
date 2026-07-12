@@ -2,7 +2,12 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { join } from 'node:path';
 import { createLogger, flushLogger } from '../src/shared/logger';
 import { loadSettings, saveSettings } from '../src/application/settings';
-import { runResearch } from '../src/application/research-service';
+import {
+  loadResearchResult,
+  runResearch,
+  runKeywordComparison,
+  type ResearchRequest,
+} from '../src/application/research-service';
 
 const rootDirectory = app.getAppPath();
 const settingsFilePath = join(rootDirectory, 'config', 'app.config.json');
@@ -39,7 +44,7 @@ ipcMain.handle('settings:save', (_event, settings: unknown) => {
   }
 });
 
-ipcMain.handle('research:start', async (_event, rawKeyword: string) => {
+ipcMain.handle('research:start', async (_event, request: ResearchRequest) => {
   if (researchInProgress) {
     return { ok: false, error: 'A research session is already running' };
   }
@@ -51,14 +56,14 @@ ipcMain.handle('research:start', async (_event, rawKeyword: string) => {
   researchInProgress = true;
   logger.info({ operation: 'application' }, 'Research session start');
   try {
-    const result = await runResearch(rootDirectory, rawKeyword, settings, logger, (stage) => {
+    const result = await runResearch(rootDirectory, request, settings, logger, (stage) => {
       mainWindow?.webContents.send('research:progress', stage);
     });
     logger.info({ operation: 'application' }, 'Research session completion');
     if (!result.ok) {
       return { ok: false, error: `Invalid keyword: ${result.detail}` };
     }
-    return { ok: true, productsSaved: result.productsSaved, reportPath: result.reportPath };
+    return { ok: true, sessionId: result.session.id, productsSaved: result.productsSaved, reportPath: result.reportPath };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   } finally {
@@ -66,10 +71,39 @@ ipcMain.handle('research:start', async (_event, rawKeyword: string) => {
   }
 });
 
+ipcMain.handle(
+  'research:compare',
+  async (_event, request: { keywords: string[]; productTypeIaCode?: string; sortOrder?: 'top selling' | 'relevant' | 'recent' }) => {
+    if (researchInProgress) {
+      return { ok: false, error: 'A research session is already running' };
+    }
+    const settings = loadSettings(settingsFilePath);
+    if (!settings) {
+      return { ok: false, error: 'AI provider is not configured. Open Settings first.' };
+    }
+    researchInProgress = true;
+    logger.info({ operation: 'application' }, 'Comparison start');
+    try {
+      const result = await runKeywordComparison(rootDirectory, request, settings, logger, (stage) => {
+        mainWindow?.webContents.send('research:progress', stage);
+      });
+      return { ok: true, ...result };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      researchInProgress = false;
+    }
+  },
+);
+
 ipcMain.handle('report:open', async (_event, reportPath: string) => {
   const message = await shell.openPath(reportPath);
   return message === '' ? { ok: true } : { ok: false, error: message };
 });
+
+ipcMain.handle('research:getData', (_event, sessionId: string) =>
+  loadResearchResult(rootDirectory, sessionId, logger),
+);
 
 app.whenReady().then(() => {
   logger.info({ operation: 'application' }, 'Application started');
