@@ -35,7 +35,10 @@ function MetaItem({ label, value }: { label: string; value: string }) {
 export function ResultsView({ data, reportPath, onNewSearch, onOpenExternal }: ResultsViewProps) {
   const { session, products, analysis } = data;
 
-  if (!session || !analysis) {
+  // Data-only sessions (POD OS bridge runs, comparison scout passes) have no
+  // AI analysis by design but carry full product data — render everything that
+  // exists. Only a session with neither analysis nor products is truly empty.
+  if (!session || (products.length === 0 && !analysis)) {
     return (
       <div className="p-8 text-ink">
         <div className="mx-auto max-w-5xl space-y-4">
@@ -46,8 +49,9 @@ export function ResultsView({ data, reportPath, onNewSearch, onOpenExternal }: R
     );
   }
 
+  const isBridgeSession = session.aiProvider === 'pod-os' || session.aiProvider === 'comparison';
   const metrics = computeMetrics(products);
-  const sections = parseAnalysis(analysis.response);
+  const sections = analysis ? parseAnalysis(analysis.response) : [];
   const marketplaceUrl = `https://www.redbubble.com/shop?query=${encodeURIComponent(session.keyword)}`;
 
   const scrollToAnalysis = () => {
@@ -70,7 +74,11 @@ export function ResultsView({ data, reportPath, onNewSearch, onOpenExternal }: R
               <MetaItem label="Type" value={session.productType ?? 'All'} />
               <MetaItem label="Sort" value={session.sortOrder ?? 'Relevant'} />
               <MetaItem label="Generated" value={formatDate(session.startedAt)} />
-              <MetaItem label="Model" value={`${analysis.provider} / ${analysis.model}`} />
+              {analysis ? (
+                <MetaItem label="Model" value={`${analysis.provider} / ${analysis.model}`} />
+              ) : (
+                <MetaItem label="Source" value={isBridgeSession ? 'POD OS bridge (data only)' : 'Data only'} />
+              )}
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
@@ -100,15 +108,28 @@ export function ResultsView({ data, reportPath, onNewSearch, onOpenExternal }: R
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-6">
-            <section id="ai-analysis" className="space-y-3 scroll-mt-6">
-              <h2 className="text-lg font-semibold">AI analysis</h2>
-              <AnalysisSections sections={sections} />
-            </section>
+            {analysis ? (
+              <section id="ai-analysis" className="space-y-3 scroll-mt-6">
+                <h2 className="text-lg font-semibold">AI analysis</h2>
+                <AnalysisSections sections={sections} />
+              </section>
+            ) : (
+              <section className="rounded-lg border border-hairline bg-panel p-4">
+                <h2 className="text-lg font-semibold">AI analysis</h2>
+                <p className="mt-1 text-sm text-muted">
+                  {isBridgeSession
+                    ? 'This session was collected as market data (via the POD OS bridge) — the interpretation lives in POD OS. The collected products and tags are shown below.'
+                    : 'No AI analysis was generated for this session.'}
+                </p>
+              </section>
+            )}
             <ProductTabs products={products} />
           </div>
-          <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-            <AiInsightsPanel onViewAnalysis={scrollToAnalysis} />
-          </aside>
+          {analysis && (
+            <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+              <AiInsightsPanel onViewAnalysis={scrollToAnalysis} />
+            </aside>
+          )}
         </div>
       </div>
     </div>

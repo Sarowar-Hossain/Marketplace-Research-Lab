@@ -1,9 +1,13 @@
 // Ensures better-sqlite3 is compiled for the requested runtime before running.
 // The app (Electron) and the test suite (system Node) can need different
 // native builds; this step removes the manual rebuild ping-pong.
+//
+// Both checks probe the real runtime — no marker files, nothing to go stale:
+//   node:     require the module under system Node.
+//   electron: require the module under Electron via ELECTRON_RUN_AS_NODE
+//             (Electron's Node runtime and ABI, no window, ~2s).
 // Usage: node scripts/ensure-abi.cjs <electron|node>
-const { execSync } = require('node:child_process');
-const { readFileSync, writeFileSync } = require('node:fs');
+const { execSync, spawnSync } = require('node:child_process');
 const { join } = require('node:path');
 
 const target = process.argv[2];
@@ -13,38 +17,31 @@ if (target !== 'electron' && target !== 'node') {
 }
 
 const rootDir = join(__dirname, '..');
-// Marker written after every ensured rebuild. Running the raw rebuild:*
-// scripts manually bypasses the marker; the next ensure run corrects it.
-const markerPath = join(rootDir, 'node_modules', '.better-sqlite3-abi');
 
-let marker = null;
-try {
-  marker = readFileSync(markerPath, 'utf8').trim();
-} catch {
-  marker = null;
+// better-sqlite3 dlopens its native addon lazily, inside the Database
+// constructor — a bare require() always succeeds and proves nothing. The
+// probe must construct a database to actually load the binary.
+const PROBE = "new (require('better-sqlite3'))(':memory:').prepare('SELECT 1').get()";
+
+function loadsUnderNode() {
+  const result = spawnSync(process.execPath, ['-e', PROBE], { cwd: rootDir, timeout: 30000 });
+  return result.status === 0;
 }
 
-if (marker === target) {
-  console.log(`better-sqlite3 already built for ${target}`);
-  process.exit(0);
+function loadsUnderElectron() {
+  // Under plain Node, require('electron') resolves to the executable path.
+  const electronPath = require('electron');
+  const result = spawnSync(electronPath, ['-e', PROBE], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    cwd: rootDir,
+    timeout: 30000,
+  });
+  return result.status === 0;
 }
 
-// Probe under system Node: an ABI-mismatch error means the current binary is
-// Electron-built; a successful load means it is Node-loadable (either a Node
-// prebuild or a runtime-portable source build — ambiguous for Electron, so
-// only the failure case is trusted as a shortcut).
-let nodeLoads = false;
-let abiMismatch = false;
-try {
-  require('better-sqlite3');
-  nodeLoads = true;
-} catch (error) {
-  abiMismatch = /NODE_MODULE_VERSION/.test(String(error && error.message));
-}
-
-if ((target === 'node' && nodeLoads) || (target === 'electron' && abiMismatch)) {
-  writeFileSync(markerPath, target);
-  console.log(`better-sqlite3 already built for ${target}`);
+const ok = target === 'node' ? loadsUnderNode() : loadsUnderElectron();
+if (ok) {
+  console.log(`better-sqlite3 already works under ${target}`);
   process.exit(0);
 }
 
@@ -53,4 +50,3 @@ execSync(target === 'electron' ? 'pnpm rebuild:electron' : 'pnpm rebuild:node', 
   stdio: 'inherit',
   cwd: rootDir,
 });
-writeFileSync(markerPath, target);
